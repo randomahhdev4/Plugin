@@ -65,17 +65,27 @@ export default {
             inputType: 0,
             type: 1,
             execute: async (args: any[]) => {
-                // Diagnostic: fires independent of the Clyde-reply mechanism
-                // below, so we can tell whether execute() runs at all versus
-                // running but the reply never rendering.
-                showToast("[BetterEval] /deval fired");
+                // Revenge's own command wrapper does
+                // `.catch(err => logger.error(...))` around execute() - any
+                // throw in here is otherwise silently logged and never shown
+                // to the user at all. This outer try/catch guarantees a
+                // toast either way, so nothing can fail invisibly.
+                try {
+                    showToast("[BetterEval] fired, args=" + JSON.stringify(args).slice(0, 150));
 
-                const code = extractCode(args);
-                if (!code.trim()) return { content: "No code provided." };
-                const result = await runEval(code);
-                const content = result.length > 1900 ? result.slice(0, 1900) + "\n…(truncated)" : result;
-                showToast("[BetterEval] returning content, length " + content.length);
-                return { content };
+                    const code = extractCode(args);
+                    showToast("[BetterEval] code=" + JSON.stringify(code));
+
+                    if (!code.trim()) return { content: "No code provided." };
+                    const result = await runEval(code);
+                    const content = result.length > 1900 ? result.slice(0, 1900) + "\n…(truncated)" : result;
+                    showToast("[BetterEval] returning content, length " + content.length);
+                    return { content };
+                } catch (e: any) {
+                    const msg = "[BetterEval] EXECUTE THREW: " + (e && e.message ? e.message : String(e));
+                    showToast(msg);
+                    return { content: msg };
+                }
             },
         } as any);
 
