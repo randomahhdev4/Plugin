@@ -1,3 +1,5 @@
+import { storage } from "@vendetta/storage";
+
 export type SettingsState = {
     driftSpeed: number;
     contourDensity: number;
@@ -11,3 +13,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
     lineOpacity: 0.16,
     lineColor: "rgba(255, 255, 255, 0.15)",
 };
+
+export function ensureDefaults() {
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+        if (storage[key] === undefined) storage[key] = (DEFAULT_SETTINGS as any)[key];
+    }
+}
