@@ -1,5 +1,5 @@
 import { findByDisplayName, findByProps, findByStoreName } from "@vendetta/metro";
-import { ReactNative } from "@vendetta/metro/common";
+import { ReactNative, clipboard } from "@vendetta/metro/common";
 import { after } from "@vendetta/patcher";
 import { findInReactTree } from "@vendetta/utils";
 import { storage } from "@vendetta/plugin";
@@ -45,19 +45,21 @@ export default {
         // every diagnostic this session, so onLoad is fully guarded and
         // checkpointed with them instead of trusting anything else.
         try {
-            showToast("[BetterTypingIndicator] onLoad start");
             ensureDefaults();
 
             const typingMod = findByProps("TypingIndicator") as any;
             const OriginalTypingIndicator = typingMod?.TypingIndicator;
             diagnostics.moduleFound = !!OriginalTypingIndicator;
-            showToast("[BetterTypingIndicator] TypingIndicator module found: " + diagnostics.moduleFound);
 
             const Messages = findByDisplayName("MessagesConnected") as any;
             diagnostics.messagesFound = !!Messages;
-            showToast("[BetterTypingIndicator] MessagesConnected found: " + diagnostics.messagesFound);
 
             if (!OriginalTypingIndicator || !Messages) {
+                // Several rapid-fire toasts were clipping/overwriting each
+                // other rather than displaying in full, which is what made
+                // earlier diagnostics look inconsistent. One short toast
+                // per outcome instead.
+                showToast("[BTI] load failed: mod=" + diagnostics.moduleFound + " msg=" + diagnostics.messagesFound);
                 logger.error("[BetterTypingIndicator] Missing a required target, aborting patch.");
                 return;
             }
@@ -153,40 +155,41 @@ export default {
                 }
                 return ret;
             });
-            showToast("[BetterTypingIndicator] patch attached");
 
             unregisterCommand = registerCommand({
                 name: "typing-status",
                 displayName: "typing-status",
-                description: "Check whether Better Typing Indicator is actually hooked in.",
-                displayDescription: "Check whether Better Typing Indicator is actually hooked in.",
+                description: "Copy a full diagnostic report to your clipboard.",
+                displayDescription: "Copy a full diagnostic report to your clipboard.",
                 options: [],
                 applicationId: "-1",
                 inputType: 0,
                 type: 1,
-                // Command replies are unreliable in this environment
-                // (confirmed separately: a correctly-built reply can still
-                // never render), so status is shown via toast.
+                // Both command replies and rapid/long toasts turned out to
+                // be unreliable in this environment (replies never render
+                // at all; toasts clip or get replaced by the next one
+                // before they're readable). Clipboard has no such limit -
+                // paste the result directly instead of reading it on-screen.
                 execute: () => {
-                    const summary = diagnostics.renderPatchFired === 0
-                        ? "MessagesConnected render patch never fired"
-                        : !diagnostics.elementFound
-                            ? "render patch firing (" + diagnostics.renderPatchFired + "x), but TypingIndicator element never found in that tree"
-                            : diagnostics.customRenderFired === 0
-                                ? "element found and retyped, but custom render hasn't fired yet - type in a channel to trigger it"
-                                : diagnostics.lastError
-                                    ? "custom render firing, but erroring: " + diagnostics.lastError
-                                    : "hooked, last visible count " + diagnostics.lastVisibleCount;
-                    showToast("[BetterTypingIndicator] " + summary);
+                    const lines = [
+                        "moduleFound=" + diagnostics.moduleFound,
+                        "messagesFound=" + diagnostics.messagesFound,
+                        "renderPatchFired=" + diagnostics.renderPatchFired,
+                        "elementFound=" + diagnostics.elementFound,
+                        "customRenderFired=" + diagnostics.customRenderFired,
+                        "lastVisibleCount=" + diagnostics.lastVisibleCount,
+                        "lastError=" + (diagnostics.lastError || "none"),
+                    ];
+                    clipboard.setString(lines.join("\n"));
+                    showToast("[BTI] status copied to clipboard");
                     return undefined;
                 },
             } as any);
-            showToast("[BetterTypingIndicator] command registered");
 
             logger.log("[BetterTypingIndicator] Loaded.");
-            showToast("[BetterTypingIndicator] onLoad complete");
+            showToast("[BTI] loaded ok");
         } catch (e) {
-            const msg = "[BetterTypingIndicator] onLoad THREW: " + (e && (e as Error).message ? (e as Error).message : String(e));
+            const msg = "[BTI] onLoad threw: " + (e && (e as Error).message ? (e as Error).message : String(e));
             logger.error(msg, e);
             showToast(msg);
         }
