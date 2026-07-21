@@ -1,4 +1,5 @@
 import { registerCommand } from "@vendetta/commands";
+import { showToast } from "@vendetta/ui/toasts";
 import { logger } from "@vendetta";
 
 function stringifyResult(value: any): string {
@@ -64,10 +65,17 @@ export default {
             inputType: 0,
             type: 1,
             execute: async (args: any[]) => {
+                // Diagnostic: fires independent of the Clyde-reply mechanism
+                // below, so we can tell whether execute() runs at all versus
+                // running but the reply never rendering.
+                showToast("[BetterEval] /deval fired");
+
                 const code = extractCode(args);
                 if (!code.trim()) return { content: "No code provided." };
                 const result = await runEval(code);
-                return { content: result.length > 1900 ? result.slice(0, 1900) + "\n…(truncated)" : result };
+                const content = result.length > 1900 ? result.slice(0, 1900) + "\n…(truncated)" : result;
+                showToast("[BetterEval] returning content, length " + content.length);
+                return { content };
             },
         } as any);
 
