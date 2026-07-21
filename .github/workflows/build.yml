@@ -28,13 +28,17 @@ jobs:
             - name: Copy additional files
               run: |
                   cp README.md dist/README.md
-                  printf -- "---\npermalink: /404.html\n---\n" > dist/404.md
-                  printf -- "> **Note:** You accessed a link that returned a 404. You are supposed to copy the plugin's install link and paste it into Revenge, not open it in a browser.\n\n" >> dist/404.md
-                  cat README.md >> dist/404.md
+                  touch dist/.nojekyll
+                  cat > dist/404.html <<'HTML'
+                  <!doctype html>
+                  <meta charset="utf-8">
+                  <title>404</title>
+                  <p>You opened a link that's meant to be pasted into Revenge's plugin installer, not opened in a browser.</p>
+                  HTML
 
             - name: Deploy to GitHub Pages
               uses: peaceiris/actions-gh-pages@v3
               with:
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   publish_dir: ./dist
-                  enable_jekyll: true
+                  enable_jekyll: false
