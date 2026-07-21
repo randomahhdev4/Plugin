@@ -55,7 +55,12 @@ function TopographicBackground() {
     );
 
     React.useEffect(() => {
-        const duration = Math.max(6000, 90000 * (1 - Math.min(0.95, speed * 400)));
+        // Map driftSpeed (0.0001-0.002) to a one-way duration (20s slowest,
+        // 3s fastest). The previous formula put the default speed at ~68s
+        // per leg (~137s full cycle) - technically animating, but far too
+        // slow to perceive as motion in any normal observation window.
+        const t = Math.min(1, Math.max(0, (speed - 0.0001) / 0.0019));
+        const duration = 20000 - t * 17000;
         const loop = Animated.loop(
             Animated.sequence([
                 Animated.timing(drift, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -87,7 +92,7 @@ function TopographicBackground() {
         >
             <Svg width={fieldWidth} height={fieldHeight}>
                 {paths.map((d, i) => (
-                    <Path key={i} d={d} stroke={color} strokeWidth={1.1} fill="none" opacity={opacity} />
+                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" opacity={opacity} />
                 ))}
             </Svg>
         </Animated.View>

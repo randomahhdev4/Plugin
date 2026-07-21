@@ -6,17 +6,41 @@ import { showToast } from "@vendetta/ui/toasts";
 
 import { DEFAULT_SETTINGS, ensureDefaults } from "./settings-model";
 
-const { ScrollView, View, Pressable } = ReactNative;
-const { FormSection, FormRow, FormSlider, FormInput, FormDivider, FormText } = Forms;
+const { ScrollView, View, Pressable, Text } = ReactNative;
+const { FormSection, FormRow, FormInput, FormText } = Forms;
 
 const PRESET_COLORS = [
-    "rgba(255, 255, 255, 0.15)",
-    "rgba(88, 101, 242, 0.35)",
-    "rgba(87, 242, 135, 0.3)",
-    "rgba(254, 231, 92, 0.3)",
-    "rgba(237, 66, 69, 0.3)",
-    "rgba(235, 69, 158, 0.3)",
+    "#8C7DFF",
+    "#5865F2",
+    "#57F287",
+    "#FEE75C",
+    "#ED4245",
+    "#EB459E",
+    "#FFFFFF",
 ];
+
+const SPEED_PRESETS = [
+    { label: "Slow", value: 0.0002 },
+    { label: "Normal", value: 0.0006 },
+    { label: "Fast", value: 0.0012 },
+    { label: "Very fast", value: 0.002 },
+];
+
+function Pill({ selected, onPress, children }: { selected: boolean; onPress: () => void; children: React.ReactNode }) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={{
+                paddingVertical: 8,
+                paddingHorizontal: 14,
+                borderRadius: 16,
+                backgroundColor: selected ? "#5865F2" : "rgba(255,255,255,0.08)",
+            }}
+        >
+            <Text style={{ color: "white", fontWeight: selected ? "700" : "400" }}>{children}</Text>
+        </Pressable>
+    );
+}
 
 function ColorSwatches({ value, onChange }: { value: string; onChange: (color: string) => void }) {
     return (
@@ -30,11 +54,50 @@ function ColorSwatches({ value, onChange }: { value: string; onChange: (color: s
                         height: 32,
                         borderRadius: 16,
                         backgroundColor: c,
-                        borderWidth: value === c ? 2 : 1,
-                        borderColor: value === c ? "white" : "rgba(255,255,255,0.3)",
+                        borderWidth: value.toLowerCase() === c.toLowerCase() ? 2 : 1,
+                        borderColor: value.toLowerCase() === c.toLowerCase() ? "white" : "rgba(255,255,255,0.3)",
                     }}
                 />
             ))}
+        </View>
+    );
+}
+
+function Stepper({
+    label,
+    value,
+    min,
+    max,
+    step,
+    format,
+    onChange,
+}: {
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    format: (v: number) => string;
+    onChange: (v: number) => void;
+}) {
+    const clamp = (v: number) => Math.min(max, Math.max(min, v));
+    return (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+            <FormText style={{ marginBottom: 8 }}>{`${label}: ${format(value)}`}</FormText>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                    onPress={() => onChange(clamp(value - step))}
+                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center" }}
+                >
+                    <Text style={{ color: "white", fontSize: 18 }}>-</Text>
+                </Pressable>
+                <Pressable
+                    onPress={() => onChange(clamp(value + step))}
+                    style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center" }}
+                >
+                    <Text style={{ color: "white", fontSize: 18 }}>+</Text>
+                </Pressable>
+            </View>
         </View>
     );
 }
@@ -50,46 +113,45 @@ export default function Settings() {
 
     return (
         <ScrollView>
-            <FormSection title="Appearance">
-                <FormRow label="Line color" subLabel="Tap a preset or enter a custom rgba/hex value below" />
+            <FormSection title="Color">
+                <FormRow label="Line color" subLabel="Tap a preset or type a custom hex/rgba value" />
                 <ColorSwatches value={lineColor} onChange={(c) => (storage.lineColor = c)} />
                 <FormInput
                     title="Custom color"
                     value={lineColor}
                     onChange={(v: string) => (storage.lineColor = v)}
-                    placeholder="rgba(255, 255, 255, 0.15)"
+                    placeholder="#8C7DFF"
                     style={{ marginHorizontal: 16, marginBottom: 12 }}
                 />
+            </FormSection>
 
-                <FormDivider />
-                <FormRow label={`Line opacity: ${Number(lineOpacity).toFixed(2)}`} />
-                <FormSlider
-                    minimumValue={0.05}
-                    maximumValue={0.8}
-                    step={0.01}
+            <FormSection title="Appearance">
+                <Stepper
+                    label="Line opacity"
                     value={lineOpacity}
-                    onValueChange={(v: number) => (storage.lineOpacity = v)}
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    format={(v) => v.toFixed(2)}
+                    onChange={(v) => (storage.lineOpacity = v)}
                 />
-
-                <FormDivider />
-                <FormRow label={`Contour density: ${contourDensity}`} />
-                <FormSlider
-                    minimumValue={4}
-                    maximumValue={20}
-                    step={1}
+                <Stepper
+                    label="Contour density"
                     value={contourDensity}
-                    onValueChange={(v: number) => (storage.contourDensity = Math.round(v))}
+                    min={4}
+                    max={24}
+                    step={1}
+                    format={(v) => String(Math.round(v))}
+                    onChange={(v) => (storage.contourDensity = Math.round(v))}
                 />
-
-                <FormDivider />
-                <FormRow label={`Drift speed: ${Number(driftSpeed).toFixed(5)}`} />
-                <FormSlider
-                    minimumValue={0.0001}
-                    maximumValue={0.002}
-                    step={0.0001}
-                    value={driftSpeed}
-                    onValueChange={(v: number) => (storage.driftSpeed = v)}
-                />
+                <FormRow label="Drift speed" />
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingBottom: 16 }}>
+                    {SPEED_PRESETS.map((p) => (
+                        <Pill key={p.label} selected={Math.abs(driftSpeed - p.value) < 1e-9} onPress={() => (storage.driftSpeed = p.value)}>
+                            {p.label}
+                        </Pill>
+                    ))}
+                </View>
             </FormSection>
 
             <FormSection title="Status">
