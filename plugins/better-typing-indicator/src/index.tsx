@@ -3,6 +3,7 @@ import { ReactNative } from "@vendetta/metro/common";
 import { instead } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
+import { showToast } from "@vendetta/ui/toasts";
 
 import Settings from "./Settings";
 import { ensureDefaults } from "./settings-model";
@@ -56,14 +57,21 @@ export default {
                 const visibleIds = typerIds.slice(0, visibleCount);
                 const hasMore = typerIds.length > visibleIds.length;
 
-                const names = visibleIds.slice(0, 3).map((id: string) => {
-                    const u = UserStore?.getUser?.(id);
-                    return u?.globalName || u?.username || "Someone";
-                });
+                const users = visibleIds.map((id: string) => UserStore?.getUser?.(id));
+                const gotUserCount = users.filter(Boolean).length;
 
-                const avatarUris: string[] = visibleIds
-                    .map((id: string) => UserStore?.getUser?.(id)?.getAvatarURL?.())
-                    .filter(Boolean);
+                const names = users.slice(0, 3).map((u: any) => u?.globalName || u?.username || "Someone");
+
+                const avatarUris: string[] = users.map((u: any) => u?.getAvatarURL?.()).filter(Boolean);
+
+                if (avatarUris.length === 0) {
+                    // Distinguishes "getUser returned nothing for these IDs"
+                    // (Discord may not have cached users you haven't directly
+                    // interacted with) from "getUser worked but getAvatarURL
+                    // didn't" - single short toast, only on this specific
+                    // empty-avatar case, not on every render.
+                    showToast(`[BTI] typers=${typerIds.length} gotUser=${gotUserCount}/${visibleIds.length} avatars=0`);
+                }
 
                 return (
                     <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 4 }}>
@@ -87,7 +95,9 @@ export default {
                     </View>
                 );
             } catch (e) {
-                logger.error("[BetterTypingIndicator] Custom render failed, falling back to original.", e);
+                const msg = "[BTI] render error: " + (e && (e as Error).message ? (e as Error).message : String(e));
+                logger.error(msg, e);
+                showToast(msg);
                 return origFunc(...args);
             }
         });
