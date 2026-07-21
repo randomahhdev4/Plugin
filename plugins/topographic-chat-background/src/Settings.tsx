@@ -1,5 +1,6 @@
 import { React, ReactNative } from "@vendetta/metro/common";
-import { storage, useProxy } from "@vendetta/storage";
+import { useProxy } from "@vendetta/storage";
+import { storage } from "@vendetta/plugin";
 import { Forms } from "@vendetta/ui/components";
 import { showToast } from "@vendetta/ui/toasts";
 

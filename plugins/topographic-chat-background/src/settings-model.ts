@@ -1,4 +1,4 @@
-import { storage } from "@vendetta/storage";
+import { storage } from "@vendetta/plugin";
 
 export type SettingsState = {
     driftSpeed: number;

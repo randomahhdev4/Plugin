@@ -2,7 +2,7 @@ import { findByDisplayName, findByProps } from "@vendetta/metro";
 import { React, ReactNative, chroma } from "@vendetta/metro/common";
 import { after } from "@vendetta/patcher";
 import { findInReactTree } from "@vendetta/utils";
-import { storage } from "@vendetta/storage";
+import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
 import { registerCommand } from "@vendetta/commands";
 
