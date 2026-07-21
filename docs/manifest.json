@@ -1,7 +1,14 @@
 {
-  "name": "topographic-chat-background",
-  "version": "1.0.0",
+  "name": "Topographic Chat Background",
   "description": "Adds a drifting topographic contour map behind the main chat content area.",
-  "author": "RandomahhDev",
-  "entry": "index.tsx"
+  "authors": [
+    {
+      "name": "RandomahhDev",
+      "id": "0"
+    }
+  ],
+  "main": "./index.tsx",
+  "vendetta": {
+    "icon": "ic_channel_browse"
+  }
 }
