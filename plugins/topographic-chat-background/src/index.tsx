@@ -10,8 +10,23 @@ import { DEFAULT_SETTINGS } from "./settings-model";
 import { buildContourPaths } from "./contours";
 
 const { View, Animated, Easing, Dimensions } = ReactNative;
-const SvgModule = findByProps("SvgXml") as any;
-const { Svg, Path } = SvgModule;
+
+// Resolved lazily (not at module-eval time): if react-native-svg hasn't been
+// touched by Discord's own code yet at the moment this plugin is enabled,
+// findByProps returns undefined, and destructuring it at the top level would
+// throw and take down the whole module before `export default` even runs.
+let svgModule: { Svg: any; Path: any } | null = null;
+function getSvg() {
+    if (svgModule) return svgModule;
+    try {
+        const found = findByProps("SvgXml") as any;
+        // The <Svg> root element is exported as `default`, not as a `Svg` key.
+        if (found?.default && found?.Path) svgModule = { Svg: found.default, Path: found.Path };
+    } catch (e) {
+        logger.error("[TopographicChatBackground] Failed to resolve react-native-svg.", e);
+    }
+    return svgModule;
+}
 
 function ensureDefaults() {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
@@ -20,6 +35,12 @@ function ensureDefaults() {
 }
 
 function TopographicBackground() {
+    // Resolved once, before any hooks run, so the hook count per mount stays
+    // constant regardless of whether react-native-svg is available.
+    const svg = getSvg();
+    if (!svg) return null;
+    const { Svg, Path } = svg;
+
     ensureDefaults();
     const drift = React.useRef(new Animated.Value(0)).current;
 
