@@ -1,10 +1,18 @@
 {
   "name": "topographic-chat-background",
+  "displayName": "Topographic Chat Background",
   "description": "Adds a drifting topographic contour map behind the main chat content area.",
   "version": "1.0.0",
   "author": "RandomahhDev",
   "license": "MIT",
   "entry": "index.tsx",
+  "main": "index.tsx",
+  "source": "https://github.com/randomahhdev4/Plugin",
+  "updater": {
+    "type": "github",
+    "repo": "randomahhdev4/Plugin",
+    "branch": "main"
+  },
   "type": "plugin",
   "settings": [
     {
