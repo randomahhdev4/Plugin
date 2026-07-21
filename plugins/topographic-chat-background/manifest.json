@@ -1,0 +1,14 @@
+{
+    "name": "Topographic Chat Background",
+    "description": "Renders a slowly drifting topographic contour pattern behind the chat area.",
+    "authors": [
+        {
+            "name": "RandomahhDev",
+            "id": "0"
+        }
+    ],
+    "main": "src/index.tsx",
+    "vendetta": {
+        "icon": "ic_channel_browse"
+    }
+}

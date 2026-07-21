@@ -1,1 +1,46 @@
-# Plugin
+# Topographic Chat Background
+
+A [Revenge](https://github.com/revenge-mod) plugin that renders a slowly drifting
+topographic contour pattern behind the Discord chat area.
+
+## Install
+
+In Revenge, open **Settings → Plugins → (+) / paste link**, and paste:
+
+```
+https://randomahhdev4.github.io/Plugin/topographic-chat-background/
+```
+
+> The link must be the **folder** URL (ending in `/`). Revenge fetches
+> `manifest.json` and the bundled `index.js` from inside it. Do **not** paste a
+> link to `manifest.json`, to `index.tsx`, or to a `jsdelivr` / `raw.githubusercontent`
+> file — Revenge cannot run raw TypeScript/JSX, only the built `index.js`.
+
+If your GitHub account or repo name differs from `randomahhdev4` / `Plugin`,
+adjust the URL to `https://<user>.github.io/<repo>/topographic-chat-background/`.
+
+## Configure
+
+Open the plugin's settings in Revenge to change drift speed, contour density,
+line opacity, and line color.
+
+## Development
+
+```bash
+npm install
+npm run build   # outputs dist/topographic-chat-background/{manifest.json,index.js}
+```
+
+Pushing to `main` builds and publishes `dist/` to GitHub Pages automatically
+(see `.github/workflows/build.yml`). GitHub Pages must be set to deploy from the
+**`gh-pages` branch** (Settings → Pages → Source: `gh-pages` / root).
+
+## Notes / limitations
+
+Revenge runs on Discord **Android** (React Native), which has no HTML canvas or
+DOM. The contour effect is therefore built from layered React Native `View`
+rings rather than a per-frame canvas. The component this plugin patches to sit
+behind chat (`MessagesWrapperConnected` and fallbacks) can change name between
+Discord builds; if the background does not appear, check the Revenge debug log
+for the "Could not locate a chat component" message and update the candidate
+list in `src/index.tsx`.

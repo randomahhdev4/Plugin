@@ -1,8 +1,0 @@
-{
-  "plugins": [
-    {
-      "name": "topographic-chat-background",
-      "manifest": "https://cdn.jsdelivr.net/gh/randomahhdev4/Plugin@main/manifest.json"
-    }
-  ]
-}
