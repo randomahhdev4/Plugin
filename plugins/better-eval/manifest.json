@@ -1,6 +1,6 @@
 {
     "name": "Better Eval",
-    "description": "Runs /deval <code> and shows the full result in a scrollable dialog, with no truncation.",
+    "description": "Runs /deval code:<code> and replies with the result. Supports async/Promises.",
     "authors": [
         {
             "name": "RandomahhDev",
