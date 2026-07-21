@@ -1,23 +1,5 @@
 import { registerCommand } from "@vendetta/commands";
-import { ReactNative } from "@vendetta/metro/common";
-import { showCustomAlert } from "@vendetta/ui/alerts";
-import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
-
-import Settings from "./Settings";
-import { ensureDefaults } from "./settings-model";
-
-const { ScrollView, Text } = ReactNative;
-
-function ResultDialog({ result }: { result: string }) {
-    return (
-        <ScrollView style={{ maxHeight: 480 }}>
-            <Text selectable style={{ color: "#DBDEE1", fontFamily: "monospace", fontSize: 12, padding: 16 }}>
-                {result}
-            </Text>
-        </ScrollView>
-    );
-}
 
 function stringifyResult(value: any): string {
     if (value === undefined) return "undefined";
@@ -49,34 +31,43 @@ async function runEval(code: string): Promise<string> {
     }
 }
 
+function extractCode(args: any[]): string {
+    if (!Array.isArray(args) || !args.length) return "";
+    const named = args.find((a) => a && a.name === "code");
+    if (named && typeof named.value === "string") return named.value;
+    const first = args[0];
+    if (first && typeof first.value === "string") return first.value;
+    if (typeof first === "string") return first;
+    return "";
+}
+
 let unregisterCommand: (() => void) | undefined;
 
 export default {
     onLoad: () => {
-        ensureDefaults();
-
-        // options: [] deliberately - the code to run lives in plugin
-        // settings instead of a command argument. That's the one pattern
-        // already proven to enable cleanly in this environment; a non-empty
-        // options array is the one thing untested so far.
         unregisterCommand = registerCommand({
             name: "deval",
             displayName: "deval",
-            description: "Evaluate the code saved in Better Eval's settings and show the result in a dismissible dialog.",
-            displayDescription: "Evaluate the code saved in Better Eval's settings and show the result in a dismissible dialog.",
-            options: [],
+            description: "Evaluate JavaScript and reply with the result. Supports async/Promises.",
+            displayDescription: "Evaluate JavaScript and reply with the result. Supports async/Promises.",
+            options: [
+                {
+                    name: "code",
+                    displayName: "code",
+                    description: "JavaScript to evaluate",
+                    displayDescription: "JavaScript to evaluate",
+                    type: 3, // STRING
+                    required: true,
+                },
+            ],
             applicationId: "-1",
             inputType: 0,
             type: 1,
-            execute: async () => {
-                const code = storage.code || "";
-                const result = code.trim()
-                    ? await runEval(code)
-                    : "No code set. Open Better Eval's settings and paste some in first.";
-                showCustomAlert(ResultDialog, { result });
-                // No content returned: nothing gets sent as an actual chat
-                // message. This is a local, dismissible dialog only you see,
-                // and it has no length cap the way a sent message would.
+            execute: async (args: any[]) => {
+                const code = extractCode(args);
+                if (!code.trim()) return { content: "No code provided." };
+                const result = await runEval(code);
+                return { content: result.length > 1900 ? result.slice(0, 1900) + "\n…(truncated)" : result };
             },
         } as any);
 
@@ -86,5 +77,4 @@ export default {
         unregisterCommand?.();
         unregisterCommand = undefined;
     },
-    settings: Settings,
 };
