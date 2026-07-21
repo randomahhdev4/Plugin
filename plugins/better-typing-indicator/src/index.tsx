@@ -1,6 +1,7 @@
-import { findByProps, findByStoreName } from "@vendetta/metro";
+import { findByDisplayName, findByProps, findByStoreName } from "@vendetta/metro";
 import { ReactNative } from "@vendetta/metro/common";
-import { instead } from "@vendetta/patcher";
+import { after } from "@vendetta/patcher";
+import { findInReactTree } from "@vendetta/utils";
 import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
 import { registerCommand } from "@vendetta/commands";
@@ -21,13 +22,13 @@ function formatLabel(names: string[], hasMore: boolean): string {
     return `${names[0]}, ${names[1]}, and ${names[2]} are typing...`;
 }
 
-// Tracked so /typing-status can report real, observed facts. A plain
-// function-component patch like this only works if whoever renders
-// <TypingIndicator/> looks up the reference fresh each render rather than a
-// cached local binding - unverified until it's actually seen firing.
+// Tracked so /typing-status can report real, observed facts.
 const diagnostics = {
     moduleFound: false,
-    patchFired: 0,
+    messagesFound: false,
+    renderPatchFired: 0,
+    elementFound: false,
+    customRenderFired: 0,
     lastError: "",
     lastVisibleCount: 0,
 };
@@ -47,33 +48,25 @@ export default {
             showToast("[BetterTypingIndicator] onLoad start");
             ensureDefaults();
 
-            const mod = findByProps("TypingIndicator") as any;
-            diagnostics.moduleFound = !!mod?.TypingIndicator;
-            showToast("[BetterTypingIndicator] module found: " + diagnostics.moduleFound);
-            if (!mod?.TypingIndicator) {
-                logger.error("[BetterTypingIndicator] Could not find TypingIndicator to patch.");
+            const typingMod = findByProps("TypingIndicator") as any;
+            const OriginalTypingIndicator = typingMod?.TypingIndicator;
+            diagnostics.moduleFound = !!OriginalTypingIndicator;
+            showToast("[BetterTypingIndicator] TypingIndicator module found: " + diagnostics.moduleFound);
+
+            const Messages = findByDisplayName("MessagesConnected") as any;
+            diagnostics.messagesFound = !!Messages;
+            showToast("[BetterTypingIndicator] MessagesConnected found: " + diagnostics.messagesFound);
+
+            if (!OriginalTypingIndicator || !Messages) {
+                logger.error("[BetterTypingIndicator] Missing a required target, aborting patch.");
                 return;
             }
 
-            unpatch = instead("TypingIndicator", mod, (args: any[], origFunc: (...a: any[]) => any) => {
-                diagnostics.patchFired++;
+            function renderCustom(props: any): any {
+                diagnostics.customRenderFired++;
                 if (storage.hideTypingIndicator) return null;
 
-                // Everything risky happens synchronously in here, inside the
-                // try block - including the hook call. This function IS what
-                // React calls as the component (it replaced TypingIndicator
-                // via `instead`), so calling a hook directly in it is valid,
-                // same as any function component body. Wrapping a *returned
-                // JSX element* in try/catch would NOT work - JSX only
-                // describes an element, React invokes the actual component
-                // function later during reconciliation, outside any
-                // try/catch here.
                 try {
-                    const props = args[0];
-                    // TypingIndicator's single argument's exact shape is
-                    // unknown (Hermes strips source from release bytecode -
-                    // no way to introspect it directly). Try the common key
-                    // names; if none work, this throws and falls back below.
                     const channelId = props?.channelId ?? props?.channel?.id ?? props?.channel_id;
                     if (!channelId) {
                         throw new Error("could not determine channelId, keys: " + JSON.stringify(Object.keys(props || {})));
@@ -130,8 +123,35 @@ export default {
                 } catch (e) {
                     diagnostics.lastError = e && (e as Error).message ? (e as Error).message : String(e);
                     logger.error("[BetterTypingIndicator] Custom render failed, falling back to original.", e);
-                    return origFunc(...args);
+                    return OriginalTypingIndicator(props);
                 }
+            }
+
+            // Patching the TypingIndicator module export directly doesn't
+            // work if whoever renders <TypingIndicator/> already captured a
+            // local reference to the original function at their own module
+            // load time (a plain function export, unlike a class's
+            // prototype method, has no guaranteed fresh lookup on every
+            // render). Instead, patch MessagesConnected - already proven
+            // reliable by the other plugin in this repo - and find the
+            // actual <TypingIndicator/> ELEMENT INSTANCE inside its
+            // rendered output, mutating its `.type` directly. React reads
+            // `.type` off the element at reconciliation time, not off any
+            // external reference, so this works regardless of the binding
+            // question above.
+            unpatch = after("render", Messages, (_args: any[], ret: any) => {
+                diagnostics.renderPatchFired++;
+                try {
+                    const typingElement = findInReactTree(ret, (x: any) => x && x.type === OriginalTypingIndicator);
+                    if (typingElement) {
+                        diagnostics.elementFound = true;
+                        typingElement.type = renderCustom;
+                    }
+                } catch (e) {
+                    diagnostics.lastError = e && (e as Error).message ? (e as Error).message : String(e);
+                    logger.error("[BetterTypingIndicator] Failed to locate/patch typing element.", e);
+                }
+                return ret;
             });
             showToast("[BetterTypingIndicator] patch attached");
 
@@ -144,15 +164,19 @@ export default {
                 applicationId: "-1",
                 inputType: 0,
                 type: 1,
-                // Command replies are unreliable in this environment (confirmed
-                // separately: a correctly-built reply can still never render),
-                // so the status is shown via toast, not returned content.
+                // Command replies are unreliable in this environment
+                // (confirmed separately: a correctly-built reply can still
+                // never render), so status is shown via toast.
                 execute: () => {
-                    const summary = diagnostics.patchFired === 0
-                        ? "patch never fired"
-                        : diagnostics.lastError
-                            ? "firing, but erroring: " + diagnostics.lastError
-                            : "hooked, last count " + diagnostics.lastVisibleCount;
+                    const summary = diagnostics.renderPatchFired === 0
+                        ? "MessagesConnected render patch never fired"
+                        : !diagnostics.elementFound
+                            ? "render patch firing (" + diagnostics.renderPatchFired + "x), but TypingIndicator element never found in that tree"
+                            : diagnostics.customRenderFired === 0
+                                ? "element found and retyped, but custom render hasn't fired yet - type in a channel to trigger it"
+                                : diagnostics.lastError
+                                    ? "custom render firing, but erroring: " + diagnostics.lastError
+                                    : "hooked, last visible count " + diagnostics.lastVisibleCount;
                     showToast("[BetterTypingIndicator] " + summary);
                     return undefined;
                 },
