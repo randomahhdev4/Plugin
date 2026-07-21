@@ -30,12 +30,12 @@ function getSvg() {
 }
 
 function TopographicBackground() {
-    // Resolved once, before any hooks run, so the hook count per mount stays
-    // constant regardless of whether react-native-svg is available.
-    const svg = getSvg();
-    if (!svg) return null;
-    const { Svg, Path } = svg;
-
+    // getSvg() can flip from unavailable to available between renders of the
+    // SAME mounted instance (it retries on failure). Hooks must never be
+    // conditional on that, or React throws "rendered more/fewer hooks than
+    // previous render" the moment it resolves mid-lifecycle - which is
+    // exactly what was crashing the patched chat render after enabling.
+    // So every hook below always runs; only the JSX return is conditional.
     ensureDefaults();
     const drift = React.useRef(new Animated.Value(0)).current;
 
@@ -68,6 +68,10 @@ function TopographicBackground() {
 
     const translateX = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -width * margin] });
     const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -height * margin * 0.6] });
+
+    const svg = getSvg();
+    if (!svg) return null;
+    const { Svg, Path } = svg;
 
     return (
         <Animated.View
