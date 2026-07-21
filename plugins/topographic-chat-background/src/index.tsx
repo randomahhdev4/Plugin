@@ -1,48 +1,22 @@
-import { findByName } from "@vendetta/metro";
-import { React, ReactNative } from "@vendetta/metro/common";
+import { findByDisplayName, findByProps } from "@vendetta/metro";
+import { React, ReactNative, chroma } from "@vendetta/metro/common";
 import { after } from "@vendetta/patcher";
+import { findInReactTree } from "@vendetta/utils";
 import { storage } from "@vendetta/storage";
 import { logger } from "@vendetta";
 
 import Settings from "./Settings";
 import { DEFAULT_SETTINGS } from "./settings-model";
+import { buildContourPaths } from "./contours";
 
-const { View, Animated, Easing, StyleSheet } = ReactNative;
+const { View, Animated, Easing, Dimensions } = ReactNative;
+const SvgModule = findByProps("SvgXml") as any;
+const { Svg, Path } = SvgModule;
 
-// Fill in any missing keys on first run so the UI + renderer always have values.
 function ensureDefaults() {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
         if (storage[key] === undefined) storage[key] = DEFAULT_SETTINGS[key];
     }
-}
-
-/**
- * A single "peak": a set of concentric rings. Stacking a few peaks of rings
- * reads as a topographic contour map, and it is cheap (a handful of Views),
- * unlike a per-frame canvas which React Native does not offer.
- */
-function Peak({ x, y, rings, spacing, color, opacity }) {
-    const items = [];
-    for (let i = rings; i >= 1; i--) {
-        const size = i * spacing;
-        items.push(
-            <View
-                key={i}
-                style={{
-                    position: "absolute",
-                    left: -size / 2,
-                    top: -size / 2,
-                    width: size,
-                    height: size,
-                    borderRadius: size / 2,
-                    borderWidth: 1,
-                    borderColor: color,
-                    opacity,
-                }}
-            />,
-        );
-    }
-    return <View style={{ position: "absolute", left: `${x}%`, top: `${y}%` }}>{items}</View>;
 }
 
 function TopographicBackground() {
@@ -53,57 +27,73 @@ function TopographicBackground() {
     const speed = storage.driftSpeed ?? DEFAULT_SETTINGS.driftSpeed;
     const opacity = storage.lineOpacity ?? DEFAULT_SETTINGS.lineOpacity;
     const color = storage.lineColor ?? DEFAULT_SETTINGS.lineColor;
-    const spacing = 26;
+
+    const { width, height } = Dimensions.get("window");
+    const margin = 0.25;
+    const fieldWidth = width * (1 + margin * 2);
+    const fieldHeight = height * (1 + margin * 2);
+
+    const paths = React.useMemo(
+        () => buildContourPaths(fieldWidth, fieldHeight, density, 34, 0, 0),
+        [fieldWidth, fieldHeight, density],
+    );
 
     React.useEffect(() => {
-        // driftSpeed is a small fraction; map it onto a slow, looping duration.
-        const duration = Math.max(4000, 60000 * (1 - Math.min(0.95, speed * 400)));
+        const duration = Math.max(6000, 90000 * (1 - Math.min(0.95, speed * 400)));
         const loop = Animated.loop(
-            Animated.timing(drift, {
-                toValue: 1,
-                duration,
-                easing: Easing.linear,
-                useNativeDriver: true,
-            }),
+            Animated.sequence([
+                Animated.timing(drift, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+                Animated.timing(drift, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+            ]),
         );
         loop.start();
         return () => loop.stop();
     }, [speed]);
 
-    const translateX = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 40] });
-    const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, 24] });
-
-    // A few peaks spread across the view give the layered-contour look.
-    const peaks = [
-        { x: 18, y: 22 },
-        { x: 72, y: 34 },
-        { x: 40, y: 68 },
-        { x: 85, y: 80 },
-    ];
+    const translateX = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -width * margin] });
+    const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -height * margin * 0.6] });
 
     return (
         <Animated.View
             pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { transform: [{ translateX }, { translateY }], overflow: "hidden" }]}
+            style={{
+                position: "absolute",
+                left: -width * margin,
+                top: -height * margin,
+                width: fieldWidth,
+                height: fieldHeight,
+                transform: [{ translateX }, { translateY }],
+            }}
         >
-            {peaks.map((p, i) => (
-                <Peak
-                    key={i}
-                    x={p.x}
-                    y={p.y}
-                    rings={density}
-                    spacing={spacing}
-                    color={color}
-                    opacity={opacity}
-                />
-            ))}
+            <Svg width={fieldWidth} height={fieldHeight}>
+                {paths.map((d, i) => (
+                    <Path key={i} d={d} stroke={color} strokeWidth={1.1} fill="none" opacity={opacity} />
+                ))}
+            </Svg>
         </Animated.View>
     );
 }
 
-// Discord's chat area component. The exact export name drifts between Discord
-// builds, so try a few known candidates and patch the first that resolves.
-const CHAT_CANDIDATES = ["MessagesWrapperConnected", "MessagesWrapper", "ChannelChat", "Chat"];
+function TopographicWrapper({ children }: { children: React.ReactNode }) {
+    return (
+        <View style={{ flex: 1, overflow: "hidden" }}>
+            <TopographicBackground />
+            {children}
+        </View>
+    );
+}
+
+// The message list itself paints an opaque background; without lowering that
+// layer's alpha, anything drawn behind it (like our contours) stays hidden.
+// This mirrors Revenge's own built-in "custom chat background" patch.
+function revealBehindMessages(tree: any) {
+    const messagesBg = findInReactTree(tree, (x: any) => x && "HACK_fixModalInteraction" in x.props && x?.props?.style);
+    if (!messagesBg) return;
+
+    const flattened = ReactNative.StyleSheet.flatten(messagesBg.props.style);
+    const transparent = chroma(flattened.backgroundColor || "black").alpha(0).hex();
+    messagesBg.props.style = ReactNative.StyleSheet.flatten([messagesBg.props.style, { backgroundColor: transparent }]);
+}
 
 let unpatch: (() => void) | undefined;
 
@@ -111,38 +101,19 @@ export default {
     onLoad: () => {
         ensureDefaults();
 
-        let target: any;
-        let found: string | undefined;
-        for (const name of CHAT_CANDIDATES) {
-            target = findByName(name, false);
-            if (target?.default || typeof target === "function") {
-                found = name;
-                break;
-            }
-        }
-
-        if (!target) {
-            logger.error(
-                `[TopographicChatBackground] Could not locate a chat component to patch. Tried: ${CHAT_CANDIDATES.join(", ")}. The plugin loaded, but has nothing to draw on.`,
-            );
+        const Messages = findByDisplayName("MessagesConnected");
+        if (!Messages) {
+            logger.error("[TopographicChatBackground] Could not find MessagesConnected to patch.");
             return;
         }
 
-        const component = target.default ? target : { default: target };
-
-        // Prepend our background as the first sibling so it renders *behind*
-        // the real chat content (later siblings paint on top in RN).
-        unpatch = after("default", component, (_args, res) => {
-            if (!res) return res;
-            return (
-                <View style={{ flex: 1 }}>
-                    <TopographicBackground />
-                    {res}
-                </View>
-            );
+        unpatch = after("render", Messages, (_args: any[], ret: any) => {
+            if (!ret) return ret;
+            revealBehindMessages(ret);
+            return <TopographicWrapper>{ret}</TopographicWrapper>;
         });
 
-        logger.log(`[TopographicChatBackground] Loaded, patched "${found}".`);
+        logger.log("[TopographicChatBackground] Loaded.");
     },
     onUnload: () => {
         unpatch?.();
