@@ -1,7 +1,11 @@
-import { React, ReactNative } from "@vendetta/metro/common";
 import { registerCommand } from "@vendetta/commands";
+import { ReactNative } from "@vendetta/metro/common";
 import { showCustomAlert } from "@vendetta/ui/alerts";
+import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
+
+import Settings from "./Settings";
+import { ensureDefaults } from "./settings-model";
 
 const { ScrollView, Text } = ReactNative;
 
@@ -19,9 +23,6 @@ function stringifyResult(value: any): string {
     if (value === undefined) return "undefined";
     if (value === null) return "null";
     if (typeof value === "string") return value;
-    if (value && typeof value.then === "function") {
-        return "[Promise returned - this tool only shows synchronous results. Avoid fetch/async; use synchronous data already available on-device instead.]";
-    }
     try {
         return JSON.stringify(value, null, 2);
     } catch {
@@ -33,10 +34,13 @@ function stringifyResult(value: any): string {
     }
 }
 
-function runEval(code: string): string {
+async function runEval(code: string): Promise<string> {
     try {
         // eslint-disable-next-line no-eval
-        const result = (0, eval)(code);
+        let result = (0, eval)(code);
+        if (result && typeof result.then === "function") {
+            result = await result;
+        }
         return stringifyResult(result);
     } catch (e: any) {
         const message = e && e.message ? e.message : String(e);
@@ -45,43 +49,34 @@ function runEval(code: string): string {
     }
 }
 
-function extractCode(args: any[]): string {
-    if (!Array.isArray(args) || !args.length) return "";
-    const named = args.find((a) => a && a.name === "code");
-    if (named && typeof named.value === "string") return named.value;
-    const first = args[0];
-    if (first && typeof first.value === "string") return first.value;
-    if (typeof first === "string") return first;
-    return "";
-}
-
 let unregisterCommand: (() => void) | undefined;
 
 export default {
     onLoad: () => {
+        ensureDefaults();
+
+        // options: [] deliberately - the code to run lives in plugin
+        // settings instead of a command argument. That's the one pattern
+        // already proven to enable cleanly in this environment; a non-empty
+        // options array is the one thing untested so far.
         unregisterCommand = registerCommand({
             name: "deval",
             displayName: "deval",
-            description: "Evaluate JS and show the full result in a scrollable dialog (no truncation).",
-            displayDescription: "Evaluate JS and show the full result in a scrollable dialog (no truncation).",
-            options: [
-                {
-                    name: "code",
-                    displayName: "code",
-                    description: "JavaScript to evaluate",
-                    displayDescription: "JavaScript to evaluate",
-                    type: 3, // STRING
-                    required: true,
-                },
-            ],
+            description: "Evaluate the code saved in Better Eval's settings and show the result in a dismissible dialog.",
+            displayDescription: "Evaluate the code saved in Better Eval's settings and show the result in a dismissible dialog.",
+            options: [],
             applicationId: "-1",
             inputType: 0,
             type: 1,
-            execute: (args: any[]) => {
-                const code = extractCode(args);
-                const result = runEval(code);
+            execute: async () => {
+                const code = storage.code || "";
+                const result = code.trim()
+                    ? await runEval(code)
+                    : "No code set. Open Better Eval's settings and paste some in first.";
                 showCustomAlert(ResultDialog, { result });
-                return { content: `Ran \`${code.length > 60 ? code.slice(0, 60) + "…" : code}\` — see dialog for full result.` };
+                // No content returned: nothing gets sent as an actual chat
+                // message. This is a local, dismissible dialog only you see,
+                // and it has no length cap the way a sent message would.
             },
         } as any);
 
@@ -91,4 +86,5 @@ export default {
         unregisterCommand?.();
         unregisterCommand = undefined;
     },
+    settings: Settings,
 };
