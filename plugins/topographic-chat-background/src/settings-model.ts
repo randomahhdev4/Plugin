@@ -2,14 +2,12 @@ import { storage } from "@vendetta/plugin";
 
 export type SettingsState = {
     driftSpeed: number;
-    contourDensity: number;
     lineOpacity: number;
     lineColor: string;
 };
 
 export const DEFAULT_SETTINGS: SettingsState = {
     driftSpeed: 0.0006,
-    contourDensity: 8,
     // Opaque color - the visible `lineOpacity` setting is the only place
     // transparency should come from. Stacking alpha in both the color AND
     // a separate opacity prop compounds multiplicatively (0.15 * 0.16 =

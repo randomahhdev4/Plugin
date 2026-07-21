@@ -107,7 +107,6 @@ export default function Settings() {
     ensureDefaults();
 
     const driftSpeed = storage.driftSpeed ?? DEFAULT_SETTINGS.driftSpeed;
-    const contourDensity = storage.contourDensity ?? DEFAULT_SETTINGS.contourDensity;
     const lineOpacity = storage.lineOpacity ?? DEFAULT_SETTINGS.lineOpacity;
     const lineColor = storage.lineColor ?? DEFAULT_SETTINGS.lineColor;
 
@@ -135,16 +134,7 @@ export default function Settings() {
                     format={(v) => v.toFixed(2)}
                     onChange={(v) => (storage.lineOpacity = v)}
                 />
-                <Stepper
-                    label="Contour density"
-                    value={contourDensity}
-                    min={4}
-                    max={16}
-                    step={1}
-                    format={(v) => String(Math.round(v))}
-                    onChange={(v) => (storage.contourDensity = Math.round(v))}
-                />
-                <FormRow label="Drift speed" />
+                <FormRow label="Animation speed" />
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingBottom: 16 }}>
                     {SPEED_PRESETS.map((p) => (
                         <Pill key={p.label} selected={Math.abs(driftSpeed - p.value) < 1e-9} onPress={() => (storage.driftSpeed = p.value)}>

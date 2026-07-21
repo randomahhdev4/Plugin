@@ -8,9 +8,9 @@ import { registerCommand } from "@vendetta/commands";
 
 import Settings from "./Settings";
 import { DEFAULT_SETTINGS, ensureDefaults } from "./settings-model";
-import { buildContourPaths } from "./contours";
+import { FRAMES, FRAME_VIEWBOX } from "./frames";
 
-const { Animated, Easing, Dimensions, StyleSheet } = ReactNative;
+const { Animated, Easing, StyleSheet } = ReactNative;
 
 // Resolved lazily (not at module-eval time): if react-native-svg hasn't been
 // touched by Discord's own code yet at the moment this plugin is enabled,
@@ -29,56 +29,30 @@ function getSvg() {
     return svgModule;
 }
 
-// The message list re-renders on basically every chat event (new messages,
-// typing indicators, read state, ...). Anything expensive done directly in
-// TopographicBackground's render runs on every one of those, not just when
-// something we actually care about changes - that was the main source of
-// lag. Memoizing the SVG output and the noise-field generation keeps normal
-// chat activity from re-triggering any of that work.
+// Every frame is precomputed at build time (scripts/generate-frames.mjs) -
+// there is no noise generation or marching squares happening on-device at
+// all anymore. This component's only job at runtime is: pick a frame index,
+// crossfade to the next one on a timer, and hand static path strings to SVG.
+// That's what makes it lag-free - there's simply no math left to do.
 function TopographicBackground() {
-    // getSvg() can flip from unavailable to available between renders of the
-    // SAME mounted instance (it retries on failure). Hooks must never be
-    // conditional on that, or React throws "rendered more/fewer hooks than
-    // previous render" the moment it resolves mid-lifecycle. So every hook
-    // below always runs unconditionally; only the JSX return is conditional.
     ensureDefaults();
 
-    const density = storage.contourDensity ?? DEFAULT_SETTINGS.contourDensity;
     const speed = storage.driftSpeed ?? DEFAULT_SETTINGS.driftSpeed;
     const opacity = storage.lineOpacity ?? DEFAULT_SETTINGS.lineOpacity;
     const color = storage.lineColor ?? DEFAULT_SETTINGS.lineColor;
-
-    const { width, height } = Dimensions.get("window");
-    const margin = 0.25;
-    const fieldWidth = width * (1 + margin * 2);
-    const fieldHeight = height * (1 + margin * 2);
-
-    // 0 (slowest) .. 1 (fastest), reused for both the pan speed and how
-    // often the field regenerates, so the "speed" setting feels coherent.
     const speedT = Math.min(1, Math.max(0, (speed - 0.0001) / 0.0019));
 
-    const drift = React.useRef(new Animated.Value(0)).current;
     const crossfade = React.useRef(new Animated.Value(0)).current;
-    const seedRef = React.useRef(1);
-    const currentPathsRef = React.useRef<string[] | null>(null);
-    const nextPathsRef = React.useRef<string[] | null>(null);
+    const indexRef = React.useRef(0);
     const [, forceTick] = React.useState(0);
 
-    if (!currentPathsRef.current) {
-        currentPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, 0, 0);
-        nextPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, 500, 500);
-    }
-
-    // Regenerate the field periodically instead of only panning a static
-    // one - this is what makes it actually flow/morph rather than just
-    // slide. Kept infrequent (8-18s depending on speed) since marching
-    // squares + fbm noise, while cheap, isn't free - doing it every frame
-    // would reintroduce the lag this pass is fixing.
     React.useEffect(() => {
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout>;
-        const regenInterval = 18000 - speedT * 10000;
-        const crossfadeDuration = 4000;
+        // How long a frame sits fully visible before crossfading to the
+        // next one in the fixed loop. Faster speed = shorter hold.
+        const holdDuration = 14000 - speedT * 9000;
+        const crossfadeDuration = 3500;
 
         function cycle() {
             crossfade.setValue(0);
@@ -89,83 +63,62 @@ function TopographicBackground() {
                 useNativeDriver: true,
             }).start(({ finished }) => {
                 if (cancelled || !finished) return;
-                currentPathsRef.current = nextPathsRef.current;
-                const s = seedRef.current++;
-                nextPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, s * 41, s * 67);
+                indexRef.current = (indexRef.current + 1) % FRAMES.length;
                 forceTick((t) => t + 1);
-                timer = setTimeout(cycle, regenInterval);
+                timer = setTimeout(cycle, holdDuration);
             });
         }
 
-        timer = setTimeout(cycle, regenInterval);
+        timer = setTimeout(cycle, holdDuration);
         return () => {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [fieldWidth, fieldHeight, density, speedT]);
-
-    React.useEffect(() => {
-        const duration = 20000 - speedT * 17000;
-        const loop = Animated.loop(
-            Animated.sequence([
-                Animated.timing(drift, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-                Animated.timing(drift, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-            ]),
-        );
-        loop.start();
-        return () => loop.stop();
     }, [speedT]);
 
-    const translateX = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -width * margin] });
-    const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -height * margin * 0.6] });
-
     const svg = getSvg();
+    const currentIndex = indexRef.current;
+    const nextIndex = (currentIndex + 1) % FRAMES.length;
+    const viewBox = `0 0 ${FRAME_VIEWBOX.width} ${FRAME_VIEWBOX.height}`;
 
     const currentLayer = React.useMemo(() => {
         if (!svg) return null;
         const { Svg, Path } = svg;
         return (
-            <Svg width={fieldWidth} height={fieldHeight}>
-                {currentPathsRef.current!.map((d, i) => (
-                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" />
+            <Svg viewBox={viewBox} width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                {FRAMES[currentIndex].map((d, i) => (
+                    <Path key={i} d={d} stroke={color} strokeWidth={2.4} fill="none" />
                 ))}
             </Svg>
         );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [svg, color, fieldWidth, fieldHeight, currentPathsRef.current]);
+    }, [svg, color, currentIndex]);
 
     const nextLayer = React.useMemo(() => {
         if (!svg) return null;
         const { Svg, Path } = svg;
         return (
-            <Svg width={fieldWidth} height={fieldHeight}>
-                {nextPathsRef.current!.map((d, i) => (
-                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" />
+            <Svg viewBox={viewBox} width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+                {FRAMES[nextIndex].map((d, i) => (
+                    <Path key={i} d={d} stroke={color} strokeWidth={2.4} fill="none" />
                 ))}
             </Svg>
         );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [svg, color, fieldWidth, fieldHeight, nextPathsRef.current]);
+    }, [svg, color, nextIndex]);
 
     if (!svg) return null;
 
     return (
-        <Animated.View
-            pointerEvents="none"
-            style={{
-                position: "absolute",
-                left: -width * margin,
-                top: -height * margin,
-                width: fieldWidth,
-                height: fieldHeight,
-                transform: [{ translateX }, { translateY }],
-            }}
-        >
-            <Animated.View style={{ position: "absolute", opacity: Animated.multiply(Animated.subtract(1, crossfade), opacity) }}>
+        <>
+            <Animated.View
+                pointerEvents="none"
+                style={[StyleSheet.absoluteFillObject, { opacity: Animated.multiply(Animated.subtract(1, crossfade), opacity) }]}
+            >
                 {currentLayer}
             </Animated.View>
-            <Animated.View style={{ position: "absolute", opacity: Animated.multiply(crossfade, opacity) }}>{nextLayer}</Animated.View>
-        </Animated.View>
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: Animated.multiply(crossfade, opacity) }]}>
+                {nextLayer}
+            </Animated.View>
+        </>
     );
 }
 
@@ -208,6 +161,7 @@ function statusReport(): string {
         `Render patch fired: ${diagnostics.renderPatchFired} time(s)`,
         `Opaque background layer found & cleared: ${diagnostics.revealFound ? "yes" : "no"}`,
         `react-native-svg resolved: ${svg ? "yes" : "no"}`,
+        `Precomputed frames: ${FRAMES.length}`,
     ];
 
     if (!diagnostics.messagesFound) {
@@ -219,7 +173,7 @@ function statusReport(): string {
     } else if (!svg) {
         lines.push("", "⚠️ Everything else is hooked, but react-native-svg isn't resolved — no lines can be drawn.");
     } else {
-        lines.push("", "✅ Fully hooked. If you still don't see anything, check density/opacity in the plugin settings.");
+        lines.push("", "✅ Fully hooked. If you still don't see anything, check opacity in the plugin settings.");
     }
 
     return lines.join("\n");
@@ -242,11 +196,6 @@ export default {
                 if (!ret) return ret;
                 diagnostics.renderPatchFired++;
                 diagnostics.revealFound = revealBehindMessages(ret);
-                // A Fragment, not a wrapping View: an extra layout box here
-                // was leaving a stuck gray layer behind after navigating
-                // through settings, almost certainly by interfering with
-                // how Discord positions its own overlays (e.g. the
-                // settings-close backdrop) relative to this subtree.
                 return (
                     <>
                         <TopographicBackground />
