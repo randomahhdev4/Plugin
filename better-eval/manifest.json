@@ -1,1 +1,0 @@
-{"name":"Better Eval","description":"Runs /deval code:<code> and replies with the result. Supports async/Promises.","authors":[{"name":"RandomahhDev","id":"0"}],"main":"index.js","vendetta":{"icon":"ic_channel_browse"},"hash":"f3640492f7163c65cf165b7e8fd3dd3ddde16776f426d0edfd15b096ed0bcfe6"}
