@@ -9,7 +9,7 @@ export type SettingsState = {
 
 export const DEFAULT_SETTINGS: SettingsState = {
     driftSpeed: 0.0006,
-    contourDensity: 10,
+    contourDensity: 8,
     // Opaque color - the visible `lineOpacity` setting is the only place
     // transparency should come from. Stacking alpha in both the color AND
     // a separate opacity prop compounds multiplicatively (0.15 * 0.16 =

@@ -139,7 +139,7 @@ export default function Settings() {
                     label="Contour density"
                     value={contourDensity}
                     min={4}
-                    max={24}
+                    max={16}
                     step={1}
                     format={(v) => String(Math.round(v))}
                     onChange={(v) => (storage.contourDensity = Math.round(v))}

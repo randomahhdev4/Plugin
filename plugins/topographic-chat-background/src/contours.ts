@@ -47,6 +47,24 @@ function perlinNoise(x: number, y: number): number {
     return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
 }
 
+// Fractal Brownian motion: sums a few octaves of noise at increasing
+// frequency/decreasing amplitude. This is what makes procedural terrain
+// look organic instead of blobby - cheap to compute since it only runs
+// once per field generation, not per frame.
+function fbm(x: number, y: number): number {
+    let total = 0;
+    let amplitude = 0.6;
+    let frequency = 1;
+    let maxValue = 0;
+    for (let i = 0; i < 3; i++) {
+        total += perlinNoise(x * frequency, y * frequency) * amplitude;
+        maxValue += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.15;
+    }
+    return total / maxValue;
+}
+
 function marchState(values: number[], level: number): number {
     let state = 0;
     if (values[0] >= level) state |= 1;
@@ -104,7 +122,7 @@ export function buildContourPaths(
     for (let y = 0; y <= rows; y++) {
         const row: number[] = [];
         for (let x = 0; x <= cols; x++) {
-            row.push(perlinNoise(x * scale + seedOffsetX, y * scale + seedOffsetY));
+            row.push(fbm(x * scale + seedOffsetX, y * scale + seedOffsetY));
         }
         field.push(row);
     }

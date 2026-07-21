@@ -10,7 +10,7 @@ import Settings from "./Settings";
 import { DEFAULT_SETTINGS, ensureDefaults } from "./settings-model";
 import { buildContourPaths } from "./contours";
 
-const { View, Animated, Easing, Dimensions } = ReactNative;
+const { Animated, Easing, Dimensions, StyleSheet } = ReactNative;
 
 // Resolved lazily (not at module-eval time): if react-native-svg hasn't been
 // touched by Discord's own code yet at the moment this plugin is enabled,
@@ -29,15 +29,19 @@ function getSvg() {
     return svgModule;
 }
 
+// The message list re-renders on basically every chat event (new messages,
+// typing indicators, read state, ...). Anything expensive done directly in
+// TopographicBackground's render runs on every one of those, not just when
+// something we actually care about changes - that was the main source of
+// lag. Memoizing the SVG output and the noise-field generation keeps normal
+// chat activity from re-triggering any of that work.
 function TopographicBackground() {
     // getSvg() can flip from unavailable to available between renders of the
     // SAME mounted instance (it retries on failure). Hooks must never be
     // conditional on that, or React throws "rendered more/fewer hooks than
-    // previous render" the moment it resolves mid-lifecycle - which is
-    // exactly what was crashing the patched chat render after enabling.
-    // So every hook below always runs; only the JSX return is conditional.
+    // previous render" the moment it resolves mid-lifecycle. So every hook
+    // below always runs unconditionally; only the JSX return is conditional.
     ensureDefaults();
-    const drift = React.useRef(new Animated.Value(0)).current;
 
     const density = storage.contourDensity ?? DEFAULT_SETTINGS.contourDensity;
     const speed = storage.driftSpeed ?? DEFAULT_SETTINGS.driftSpeed;
@@ -49,18 +53,59 @@ function TopographicBackground() {
     const fieldWidth = width * (1 + margin * 2);
     const fieldHeight = height * (1 + margin * 2);
 
-    const paths = React.useMemo(
-        () => buildContourPaths(fieldWidth, fieldHeight, density, 34, 0, 0),
-        [fieldWidth, fieldHeight, density],
-    );
+    // 0 (slowest) .. 1 (fastest), reused for both the pan speed and how
+    // often the field regenerates, so the "speed" setting feels coherent.
+    const speedT = Math.min(1, Math.max(0, (speed - 0.0001) / 0.0019));
+
+    const drift = React.useRef(new Animated.Value(0)).current;
+    const crossfade = React.useRef(new Animated.Value(0)).current;
+    const seedRef = React.useRef(1);
+    const currentPathsRef = React.useRef<string[] | null>(null);
+    const nextPathsRef = React.useRef<string[] | null>(null);
+    const [, forceTick] = React.useState(0);
+
+    if (!currentPathsRef.current) {
+        currentPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, 0, 0);
+        nextPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, 500, 500);
+    }
+
+    // Regenerate the field periodically instead of only panning a static
+    // one - this is what makes it actually flow/morph rather than just
+    // slide. Kept infrequent (8-18s depending on speed) since marching
+    // squares + fbm noise, while cheap, isn't free - doing it every frame
+    // would reintroduce the lag this pass is fixing.
+    React.useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const regenInterval = 18000 - speedT * 10000;
+        const crossfadeDuration = 4000;
+
+        function cycle() {
+            crossfade.setValue(0);
+            Animated.timing(crossfade, {
+                toValue: 1,
+                duration: crossfadeDuration,
+                easing: Easing.inOut(Easing.quad),
+                useNativeDriver: true,
+            }).start(({ finished }) => {
+                if (cancelled || !finished) return;
+                currentPathsRef.current = nextPathsRef.current;
+                const s = seedRef.current++;
+                nextPathsRef.current = buildContourPaths(fieldWidth, fieldHeight, density, 30, s * 41, s * 67);
+                forceTick((t) => t + 1);
+                timer = setTimeout(cycle, regenInterval);
+            });
+        }
+
+        timer = setTimeout(cycle, regenInterval);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [fieldWidth, fieldHeight, density, speedT]);
 
     React.useEffect(() => {
-        // Map driftSpeed (0.0001-0.002) to a one-way duration (20s slowest,
-        // 3s fastest). The previous formula put the default speed at ~68s
-        // per leg (~137s full cycle) - technically animating, but far too
-        // slow to perceive as motion in any normal observation window.
-        const t = Math.min(1, Math.max(0, (speed - 0.0001) / 0.0019));
-        const duration = 20000 - t * 17000;
+        const duration = 20000 - speedT * 17000;
         const loop = Animated.loop(
             Animated.sequence([
                 Animated.timing(drift, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -69,14 +114,40 @@ function TopographicBackground() {
         );
         loop.start();
         return () => loop.stop();
-    }, [speed]);
+    }, [speedT]);
 
     const translateX = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -width * margin] });
     const translateY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -height * margin * 0.6] });
 
     const svg = getSvg();
+
+    const currentLayer = React.useMemo(() => {
+        if (!svg) return null;
+        const { Svg, Path } = svg;
+        return (
+            <Svg width={fieldWidth} height={fieldHeight}>
+                {currentPathsRef.current!.map((d, i) => (
+                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" />
+                ))}
+            </Svg>
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [svg, color, fieldWidth, fieldHeight, currentPathsRef.current]);
+
+    const nextLayer = React.useMemo(() => {
+        if (!svg) return null;
+        const { Svg, Path } = svg;
+        return (
+            <Svg width={fieldWidth} height={fieldHeight}>
+                {nextPathsRef.current!.map((d, i) => (
+                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" />
+                ))}
+            </Svg>
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [svg, color, fieldWidth, fieldHeight, nextPathsRef.current]);
+
     if (!svg) return null;
-    const { Svg, Path } = svg;
 
     return (
         <Animated.View
@@ -90,34 +161,34 @@ function TopographicBackground() {
                 transform: [{ translateX }, { translateY }],
             }}
         >
-            <Svg width={fieldWidth} height={fieldHeight}>
-                {paths.map((d, i) => (
-                    <Path key={i} d={d} stroke={color} strokeWidth={1.8} fill="none" opacity={opacity} />
-                ))}
-            </Svg>
+            <Animated.View style={{ position: "absolute", opacity: Animated.multiply(Animated.subtract(1, crossfade), opacity) }}>
+                {currentLayer}
+            </Animated.View>
+            <Animated.View style={{ position: "absolute", opacity: Animated.multiply(crossfade, opacity) }}>{nextLayer}</Animated.View>
         </Animated.View>
-    );
-}
-
-function TopographicWrapper({ children }: { children: React.ReactNode }) {
-    return (
-        <View style={{ flex: 1, overflow: "hidden" }}>
-            <TopographicBackground />
-            {children}
-        </View>
     );
 }
 
 // The message list itself paints an opaque background; without lowering that
 // layer's alpha, anything drawn behind it (like our contours) stays hidden.
 // This mirrors Revenge's own built-in "custom chat background" patch.
+const transparentColorCache = new Map<string, string>();
+function getTransparentColor(original: string): string {
+    let cached = transparentColorCache.get(original);
+    if (!cached) {
+        cached = chroma(original || "black").alpha(0).hex();
+        transparentColorCache.set(original, cached);
+    }
+    return cached;
+}
+
 function revealBehindMessages(tree: any): boolean {
     const messagesBg = findInReactTree(tree, (x: any) => x && "HACK_fixModalInteraction" in x.props && x?.props?.style);
     if (!messagesBg) return false;
 
-    const flattened = ReactNative.StyleSheet.flatten(messagesBg.props.style);
-    const transparent = chroma(flattened.backgroundColor || "black").alpha(0).hex();
-    messagesBg.props.style = ReactNative.StyleSheet.flatten([messagesBg.props.style, { backgroundColor: transparent }]);
+    const flattened = StyleSheet.flatten(messagesBg.props.style);
+    const transparent = getTransparentColor(flattened.backgroundColor || "black");
+    messagesBg.props.style = StyleSheet.flatten([messagesBg.props.style, { backgroundColor: transparent }]);
     return true;
 }
 
@@ -171,7 +242,17 @@ export default {
                 if (!ret) return ret;
                 diagnostics.renderPatchFired++;
                 diagnostics.revealFound = revealBehindMessages(ret);
-                return <TopographicWrapper>{ret}</TopographicWrapper>;
+                // A Fragment, not a wrapping View: an extra layout box here
+                // was leaving a stuck gray layer behind after navigating
+                // through settings, almost certainly by interfering with
+                // how Discord positions its own overlays (e.g. the
+                // settings-close backdrop) relative to this subtree.
+                return (
+                    <>
+                        <TopographicBackground />
+                        {ret}
+                    </>
+                );
             });
         }
 
