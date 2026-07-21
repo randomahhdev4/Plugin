@@ -1,0 +1,14 @@
+{
+    "name": "Better Eval",
+    "description": "Runs /deval <code> and shows the full result in a scrollable dialog, with no truncation.",
+    "authors": [
+        {
+            "name": "RandomahhDev",
+            "id": "0"
+        }
+    ],
+    "main": "src/index.tsx",
+    "vendetta": {
+        "icon": "ic_channel_browse"
+    }
+}
