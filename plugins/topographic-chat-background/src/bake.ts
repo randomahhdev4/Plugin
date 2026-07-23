@@ -102,25 +102,32 @@ export async function bakeGif(width: number, height: number, onProgress?: BakePr
     const cacheDir = constants.CacheDirPath || constants.CachesDirectoryPath || constants.DocumentsDirPath;
     if (!cacheDir) throw new Error("No writable directory path found on the filesystem module");
 
-    const oldPath = storage.cachedGifPath as string | undefined;
-    const path = `${cacheDir}/topo-background-${Date.now()}.gif`;
+    const oldAbsolutePath = storage.cachedGifPath as string | undefined;
+    const filename = `topo-background-${Date.now()}.gif`;
+    // Confirmed via the actual runtime error: this module does NOT take a
+    // raw absolute path - it validates against a fixed set of named
+    // storage directories ("Unknown storage directory ... Supported
+    // storage directories: [documents, cache]"). CacheDirPath from
+    // getConstants() is apparently just informational; the real API wants
+    // the symbolic keyword "cache" as the path prefix instead.
+    const writePath = `cache/${filename}`;
+    const absolutePath = `${cacheDir}/${filename}`;
     const base64 = base64Encode(gifBytes);
-    // TurboModule method rejects fewer than its declared arity (confirmed:
-    // "expected argument count: 4"), and the 4th argument specifically has
-    // to be a string (confirmed: "Expected argument 3 ... to be a string,
-    // but got an object" when {} was tried). This looks like Discord's own
-    // media-file utility rather than a generic fs module, so a MIME type
-    // string is the most plausible shape for a 4th param here.
-    await fs.writeFile(path, base64, "base64", "image/gif");
+    await fs.writeFile(writePath, base64, "base64", "image/gif");
 
-    if (oldPath && oldPath !== path) {
+    if (oldAbsolutePath && oldAbsolutePath !== absolutePath && oldAbsolutePath.startsWith(cacheDir)) {
         try {
-            await fs.removeFile(oldPath);
+            // removeFile is presumably the same "named directory" API, not
+            // a raw-path one - re-derive the symbolic form from whatever
+            // absolute path was previously stored (that's what Image needs
+            // to actually load the file, so it's what gets returned/saved).
+            const oldRelative = `cache${oldAbsolutePath.slice(cacheDir.length)}`;
+            await fs.removeFile(oldRelative);
         } catch {
             // Best-effort cleanup of the previous bake; a leftover file
             // isn't worth failing the whole operation over.
         }
     }
 
-    return path;
+    return absolutePath;
 }
