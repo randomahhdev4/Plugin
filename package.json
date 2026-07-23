@@ -2,8 +2,7 @@
 	"name": "topographic-chat-background",
 	"private": true,
 	"scripts": {
-		"build": "node build.mjs",
-		"generate-frames": "node scripts/generate-frames.mjs"
+		"build": "node build.mjs"
 	},
 	"dependencies": {
 		"@swc/helpers": "^0.5.17"
