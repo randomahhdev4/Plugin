@@ -6,9 +6,9 @@ import { Forms } from "@vendetta/ui/components";
 import { showToast } from "@vendetta/ui/toasts";
 
 import { DEFAULT_SETTINGS, ensureDefaults, randomizeNoise } from "./settings-model";
-import { buildAllContourPaths } from "./contours";
+import { subscribe, getPaths } from "./engine";
 
-const { ScrollView, View, Pressable, Text } = ReactNative;
+const { ScrollView, View, Pressable, Text, Dimensions } = ReactNative;
 const { FormSection, FormRow, FormInput, FormText, FormSwitchRow } = Forms;
 
 let svgModule: { Svg: any; Path: any } | null = null;
@@ -24,46 +24,26 @@ function getSvg() {
     return svgModule;
 }
 
-const PREVIEW_WIDTH = 300;
-const PREVIEW_HEIGHT = 110;
-const PREVIEW_INTERVAL_MS = 150;
+// Sized to actually fill the settings screen width (minus the same padding
+// used around it) instead of a small fixed pixel box, and tall enough to
+// read as a real preview rather than a sliver. Uses the same shared engine
+// as the live background (keyed by this exact size), so there's one
+// generation codepath, not a second copy of the timer/lifecycle logic.
+const PREVIEW_HEIGHT = 200;
 
 function Preview() {
     const svg = getSvg();
-    const timeRef = React.useRef(0);
-    const pathsRef = React.useRef<string[]>([]);
-    const [, forceTick] = React.useState(0);
+    const { width: screenWidth } = Dimensions.get("window");
+    const previewWidth = screenWidth - 32;
 
-    const gridStep = storage.gridStep ?? DEFAULT_SETTINGS.gridStep;
-    const levels = storage.levels ?? DEFAULT_SETTINGS.levels;
-    const levelRange = storage.levelRange ?? DEFAULT_SETTINGS.levelRange;
-    const speed = storage.speed ?? DEFAULT_SETTINGS.speed;
+    const [, forceTick] = React.useState(0);
+    React.useEffect(() => subscribe(previewWidth, PREVIEW_HEIGHT, () => forceTick((t) => t + 1)), [previewWidth]);
+
     const majorEvery = storage.majorEvery ?? DEFAULT_SETTINGS.majorEvery;
     const colorMain = storage.colorMain ?? DEFAULT_SETTINGS.colorMain;
     const colorSub = storage.colorSub ?? DEFAULT_SETTINGS.colorSub;
     const colorBg = storage.colorBg ?? DEFAULT_SETTINGS.colorBg;
     const glow = storage.glow ?? DEFAULT_SETTINGS.glow;
-    const noise = storage.noise ?? DEFAULT_SETTINGS.noise;
-
-    React.useEffect(() => {
-        let cancelled = false;
-        const dtPerTick = 0.012 * speed * (PREVIEW_INTERVAL_MS / 16.67);
-
-        function tick() {
-            if (cancelled) return;
-            timeRef.current += dtPerTick;
-            pathsRef.current = buildAllContourPaths(PREVIEW_WIDTH, PREVIEW_HEIGHT, gridStep, levels, levelRange, timeRef.current, noise);
-            forceTick((t) => t + 1);
-        }
-
-        tick();
-        const id = setInterval(tick, PREVIEW_INTERVAL_MS);
-        return () => {
-            cancelled = true;
-            clearInterval(id);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gridStep, levels, levelRange, speed, noise]);
 
     if (!svg) {
         return (
@@ -74,8 +54,9 @@ function Preview() {
     }
 
     const { Svg, Path } = svg;
+    const paths = getPaths(previewWidth, PREVIEW_HEIGHT);
     const items: any[] = [];
-    pathsRef.current.forEach((d, i) => {
+    paths.forEach((d, i) => {
         const isMajor = i % majorEvery === 0;
         if (isMajor) {
             if (glow) items.push(<Path key={`${i}-glow`} d={d} stroke={colorMain} strokeWidth={4} strokeOpacity={0.25} fill="none" />);
@@ -87,7 +68,7 @@ function Preview() {
 
     return (
         <View style={{ width: "100%", height: PREVIEW_HEIGHT, backgroundColor: colorBg, borderRadius: 8, overflow: "hidden" }}>
-            <Svg width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT} viewBox={`0 0 ${PREVIEW_WIDTH} ${PREVIEW_HEIGHT}`}>
+            <Svg width={previewWidth} height={PREVIEW_HEIGHT}>
                 {items}
             </Svg>
         </View>

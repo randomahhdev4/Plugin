@@ -7,7 +7,7 @@ import { logger } from "@vendetta";
 
 import Settings from "./Settings";
 import { ensureDefaults, DEFAULT_SETTINGS } from "./settings-model";
-import { buildAllContourPaths } from "./contours";
+import { subscribe, getPaths } from "./engine";
 
 const { Animated, Dimensions, StyleSheet } = ReactNative;
 
@@ -28,64 +28,32 @@ export function getSvg() {
     return svgModule;
 }
 
-// How often the expensive part (marching squares over the whole grid) runs.
-// The reference HTML recomputes every requestAnimationFrame (~60fps) because
-// a desktop browser's hardware-accelerated canvas can afford that; SVG path
-// string rebuilding + React reconciling on a phone cannot. Throttling to
-// ~6fps keeps the same "slowly evolving terrain" look (a background doesn't
-// need 60fps smoothness) while cutting the expensive work by ~90%.
-const REGEN_INTERVAL_MS = 160;
-
 export function TopographicBackground() {
     ensureDefaults();
 
-    const gridStep = storage.gridStep ?? DEFAULT_SETTINGS.gridStep;
-    const levels = storage.levels ?? DEFAULT_SETTINGS.levels;
-    const levelRange = storage.levelRange ?? DEFAULT_SETTINGS.levelRange;
-    const speed = storage.speed ?? DEFAULT_SETTINGS.speed;
     const majorEvery = storage.majorEvery ?? DEFAULT_SETTINGS.majorEvery;
     const colorMain = storage.colorMain ?? DEFAULT_SETTINGS.colorMain;
     const colorSub = storage.colorSub ?? DEFAULT_SETTINGS.colorSub;
     const glow = storage.glow ?? DEFAULT_SETTINGS.glow;
     const bgOpacity = storage.bgOpacity ?? DEFAULT_SETTINGS.bgOpacity;
-    const noise = storage.noise ?? DEFAULT_SETTINGS.noise;
 
     const { width, height } = Dimensions.get("window");
-
-    const timeRef = React.useRef(0);
-    const pathsRef = React.useRef<string[]>([]);
     const [, forceTick] = React.useState(0);
 
-    // Only geometry-affecting settings need to restart the regen timer;
-    // color/glow/opacity are applied at render time below and don't need
-    // the grid recomputed at all.
-    React.useEffect(() => {
-        let cancelled = false;
-        const dtPerTick = 0.012 * speed * (REGEN_INTERVAL_MS / 16.67);
-
-        function tick() {
-            if (cancelled) return;
-            timeRef.current += dtPerTick;
-            pathsRef.current = buildAllContourPaths(width, height, gridStep, levels, levelRange, timeRef.current, noise);
-            forceTick((t) => t + 1);
-        }
-
-        tick();
-        const id = setInterval(tick, REGEN_INTERVAL_MS);
-        return () => {
-            cancelled = true;
-            clearInterval(id);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [width, height, gridStep, levels, levelRange, speed, noise]);
+    // Generation itself lives in the shared engine, keyed by size, so it
+    // keeps running on its own schedule regardless of how often this
+    // particular component instance mounts/unmounts. This effect just
+    // subscribes to updates for this size and re-renders when they happen.
+    React.useEffect(() => subscribe(width, height, () => forceTick((t) => t + 1)), [width, height]);
 
     const svg = getSvg();
+    const paths = getPaths(width, height);
 
     const layer = React.useMemo(() => {
         if (!svg) return null;
         const { Svg, Path } = svg;
         const items: any[] = [];
-        pathsRef.current.forEach((d, i) => {
+        paths.forEach((d, i) => {
             const isMajor = i % majorEvery === 0;
             if (isMajor) {
                 if (glow) {
@@ -101,8 +69,7 @@ export function TopographicBackground() {
                 {items}
             </Svg>
         );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [svg, pathsRef.current, colorMain, colorSub, majorEvery, glow, width, height]);
+    }, [svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
 
     if (!svg || !layer) return null;
 
