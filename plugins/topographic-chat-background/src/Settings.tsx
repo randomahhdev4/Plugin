@@ -31,7 +31,7 @@ function getSvg() {
 // read as a real preview rather than a sliver. Uses the same shared engine
 // as the live background (keyed by this exact size), so there's one
 // generation codepath, not a second copy of the timer/lifecycle logic.
-const PREVIEW_HEIGHT = 450;
+const PREVIEW_HEIGHT = 275;
 
 function Preview() {
     const svg = getSvg();
@@ -142,16 +142,8 @@ function BakeSection() {
 
     return (
         <FormSection title="Baked Background (experimental)">
-            <FormText style={{ padding: 16 }}>
-                Renders the current settings to an actual GIF file and plays that back instead of
-                generating the pattern live. Once baked, display costs nothing on the JS thread - the
-                platform decodes and loops the GIF natively, the same as any other image. Re-run Apply
-                any time you change a setting above; it only affects display, not the live preview.
-            </FormText>
-            <FormText style={{ paddingHorizontal: 16, paddingBottom: 16, color: "#F0B232" }}>
-                ⚠️ Your device will likely stutter for several seconds while this bakes (it's real
-                rendering work, just done once instead of continuously). Stay on this screen until it
-                finishes.
+            <FormText style={{ paddingHorizontal: 16, paddingBottom: 16, color: "#F0B232" }}>t
+                ⚠️ Your device will likely stutter for several seconds while this bakes
             </FormText>
 
             <FormRow

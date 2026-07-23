@@ -105,13 +105,13 @@ export async function bakeGif(width: number, height: number, onProgress?: BakePr
     const oldPath = storage.cachedGifPath as string | undefined;
     const path = `${cacheDir}/topo-background-${Date.now()}.gif`;
     const base64 = base64Encode(gifBytes);
-    // TurboModule method rejects fewer than its declared arity - confirmed
-    // via the actual runtime error (expected argument count: 4) - so this
-    // needs a real 4th argument, not an optional trailing one. An empty
-    // options object is the most common shape for a trailing param like
-    // this on a native fs module; if it turns out to expect something more
-    // specific, the next runtime error will say what.
-    await fs.writeFile(path, base64, "base64", {});
+    // TurboModule method rejects fewer than its declared arity (confirmed:
+    // "expected argument count: 4"), and the 4th argument specifically has
+    // to be a string (confirmed: "Expected argument 3 ... to be a string,
+    // but got an object" when {} was tried). This looks like Discord's own
+    // media-file utility rather than a generic fs module, so a MIME type
+    // string is the most plausible shape for a 4th param here.
+    await fs.writeFile(path, base64, "base64", "image/gif");
 
     if (oldPath && oldPath !== path) {
         try {
