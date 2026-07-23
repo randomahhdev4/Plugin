@@ -1,14 +1,17 @@
+import { ReactNative } from "@vendetta/metro/common";
 import { storage } from "@vendetta/plugin";
 import { DEFAULT_SETTINGS } from "./settings-model";
 import { buildAllContourPaths } from "./contours";
 
+const { InteractionManager } = ReactNative;
+
 // How often the expensive part (marching squares over the whole grid) runs.
 // The reference HTML recomputes every requestAnimationFrame (~60fps) because
 // a desktop browser's hardware-accelerated canvas can afford that; SVG path
-// string rebuilding + React reconciling on a phone cannot. Throttling to
-// ~6fps keeps the same "slowly evolving terrain" look (a background doesn't
-// need 60fps smoothness) while cutting the expensive work by ~90%.
-const REGEN_INTERVAL_MS = 160;
+// string rebuilding + React reconciling on a phone cannot. ~2.5fps still
+// reads as slowly evolving terrain (a background doesn't need smoothness the
+// way a foreground animation would) while keeping real device headroom.
+const REGEN_INTERVAL_MS = 400;
 
 // Keyed by "widthxheight" (main background uses the full window; the
 // settings preview uses its own smaller size) and kept at MODULE scope, not
@@ -23,8 +26,9 @@ const REGEN_INTERVAL_MS = 160;
 type EngineState = {
     time: number;
     paths: string[];
+    hasGenerated: boolean;
     intervalId: ReturnType<typeof setInterval> | null;
-    startTimeout: ReturnType<typeof setTimeout> | null;
+    startCancel: (() => void) | null;
     listeners: Set<() => void>;
 };
 
@@ -37,22 +41,29 @@ function keyFor(width: number, height: number): string {
 function getEngine(key: string): EngineState {
     let e = engines.get(key);
     if (!e) {
-        e = { time: 0, paths: [], intervalId: null, startTimeout: null, listeners: new Set() };
+        e = { time: 0, paths: [], hasGenerated: false, intervalId: null, startCancel: null, listeners: new Set() };
         engines.set(key, e);
     }
     return e;
 }
 
 function tick(e: EngineState, width: number, height: number) {
+    const speed = storage.speed ?? DEFAULT_SETTINGS.speed;
+    const dtPerTick = 0.012 * speed * (REGEN_INTERVAL_MS / 16.67);
+
+    // speed=0 means a frozen, unchanging field - once it's been generated
+    // once, recomputing the identical grid every tick (and re-rendering
+    // every subscriber) is pure waste. Skip until speed changes again.
+    if (dtPerTick === 0 && e.hasGenerated) return;
+
     const gridStep = storage.gridStep ?? DEFAULT_SETTINGS.gridStep;
     const levels = storage.levels ?? DEFAULT_SETTINGS.levels;
     const levelRange = storage.levelRange ?? DEFAULT_SETTINGS.levelRange;
-    const speed = storage.speed ?? DEFAULT_SETTINGS.speed;
     const noise = storage.noise ?? DEFAULT_SETTINGS.noise;
 
-    const dtPerTick = 0.012 * speed * (REGEN_INTERVAL_MS / 16.67);
     e.time += dtPerTick;
     e.paths = buildAllContourPaths(width, height, gridStep, levels, levelRange, e.time, noise);
+    e.hasGenerated = true;
     e.listeners.forEach((fn) => fn());
 }
 
@@ -62,15 +73,28 @@ export function subscribe(width: number, height: number, onUpdate: () => void): 
     const e = getEngine(key);
     e.listeners.add(onUpdate);
 
-    if (!e.intervalId && !e.startTimeout) {
-        // Deferred slightly so the very first (synchronous, most expensive)
-        // computation doesn't block whatever transition is happening right
-        // as this mounts (e.g. opening a channel).
-        e.startTimeout = setTimeout(() => {
-            e.startTimeout = null;
-            tick(e, width, height);
-            e.intervalId = setInterval(() => tick(e, width, height), REGEN_INTERVAL_MS);
-        }, 50);
+    if (!e.intervalId && !e.startCancel) {
+        // Deferred via InteractionManager rather than a flat timeout, so the
+        // very first (synchronous, most expensive) computation waits for
+        // whatever transition is actually happening right as this mounts
+        // (e.g. opening a channel) to finish, instead of guessing a fixed
+        // delay that might be too short on a slow device or unnecessarily
+        // long on a fast one.
+        if (InteractionManager?.runAfterInteractions) {
+            const handle = InteractionManager.runAfterInteractions(() => {
+                e.startCancel = null;
+                tick(e, width, height);
+                e.intervalId = setInterval(() => tick(e, width, height), REGEN_INTERVAL_MS);
+            });
+            e.startCancel = () => handle.cancel?.();
+        } else {
+            const id = setTimeout(() => {
+                e.startCancel = null;
+                tick(e, width, height);
+                e.intervalId = setInterval(() => tick(e, width, height), REGEN_INTERVAL_MS);
+            }, 50);
+            e.startCancel = () => clearTimeout(id);
+        }
     }
 
     return () => {
@@ -80,9 +104,9 @@ export function subscribe(width: number, height: number, onUpdate: () => void): 
                 clearInterval(e.intervalId);
                 e.intervalId = null;
             }
-            if (e.startTimeout) {
-                clearTimeout(e.startTimeout);
-                e.startTimeout = null;
+            if (e.startCancel) {
+                e.startCancel();
+                e.startCancel = null;
             }
         }
     };

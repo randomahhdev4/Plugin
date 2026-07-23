@@ -21,8 +21,8 @@ export type SettingsState = {
 // than the HTML's, since this runs continuously on a phone rather than a
 // desktop browser with hardware-accelerated canvas.
 export const DEFAULT_SETTINGS: SettingsState = {
-    gridStep: 10,
-    levels: 12,
+    gridStep: 18,
+    levels: 7,
     levelRange: 2.8,
     speed: 1.0,
     majorEvery: 4,
@@ -34,7 +34,16 @@ export const DEFAULT_SETTINGS: SettingsState = {
     noise: { ...DEFAULT_NOISE },
 };
 
+// TopographicBackground calls ensureDefaults() on every render (which
+// happens often - MessagesConnected re-renders on most chat activity).
+// The check-and-backfill loop below is cheap once, but there's no reason to
+// repeat it every single render when it can only ever do real work the
+// first time (or right after Import/Reset, which call it directly again).
+let ensured = false;
+
 export function ensureDefaults() {
+    if (ensured) return;
+    ensured = true;
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
         if (storage[key] === undefined) {
             const value = (DEFAULT_SETTINGS as any)[key];

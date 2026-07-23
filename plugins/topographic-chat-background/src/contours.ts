@@ -57,9 +57,20 @@ export function computeGrid(
     return { grid, cols, rows };
 }
 
+// Repeated += on a growing string can behave quadratically depending on the
+// engine's string representation; accumulating into an array and joining
+// once at the end avoids that regardless of engine internals. Coordinates
+// are rounded to integers rather than formatted with .toFixed(1) - a
+// background pattern doesn't need sub-pixel precision, integers produce
+// shorter strings, and Math.round + implicit toString is cheaper than
+// decimal formatting, run across tens of thousands of points per tick.
+function r(n: number): number {
+    return Math.round(n);
+}
+
 /** Builds one SVG path `d` string for a single contour level, matching the HTML's marching-squares switch exactly. */
 export function buildContourPath(grid: Float32Array, cols: number, rows: number, gridStep: number, level: number): string {
-    let d = "";
+    const parts: string[] = [];
     const gs = gridStep;
 
     for (let j = 0; j < rows - 1; j++) {
@@ -89,83 +100,81 @@ export function buildContourPath(grid: Float32Array, cols: number, rows: number,
                 case 1:
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
-                    d += `M${lx.toFixed(1)},${ly.toFixed(1)} L${tx.toFixed(1)},${ty.toFixed(1)} `;
+                    parts.push(`M${r(lx)},${r(ly)} L${r(tx)},${r(ty)} `);
                     break;
                 case 2:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${rx.toFixed(1)},${ry.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(rx)},${r(ry)} `);
                     break;
                 case 3:
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
-                    d += `M${lx.toFixed(1)},${ly.toFixed(1)} L${rx.toFixed(1)},${ry.toFixed(1)} `;
+                    parts.push(`M${r(lx)},${r(ly)} L${r(rx)},${r(ry)} `);
                     break;
                 case 4:
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
-                    d += `M${rx.toFixed(1)},${ry.toFixed(1)} L${bx.toFixed(1)},${by.toFixed(1)} `;
+                    parts.push(`M${r(rx)},${r(ry)} L${r(bx)},${r(by)} `);
                     break;
                 case 5:
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
-                    d += `M${lx.toFixed(1)},${ly.toFixed(1)} L${tx.toFixed(1)},${ty.toFixed(1)} `;
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
-                    d += `M${rx.toFixed(1)},${ry.toFixed(1)} L${bx.toFixed(1)},${by.toFixed(1)} `;
+                    parts.push(`M${r(lx)},${r(ly)} L${r(tx)},${r(ty)} M${r(rx)},${r(ry)} L${r(bx)},${r(by)} `);
                     break;
                 case 6:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${bx.toFixed(1)},${by.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(bx)},${r(by)} `);
                     break;
                 case 7:
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
-                    d += `M${lx.toFixed(1)},${ly.toFixed(1)} L${bx.toFixed(1)},${by.toFixed(1)} `;
+                    parts.push(`M${r(lx)},${r(ly)} L${r(bx)},${r(by)} `);
                     break;
                 case 8:
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
-                    d += `M${bx.toFixed(1)},${by.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)} `;
+                    parts.push(`M${r(bx)},${r(by)} L${r(lx)},${r(ly)} `);
                     break;
                 case 9:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${bx.toFixed(1)},${by.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(bx)},${r(by)} `);
                     break;
                 case 10:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)} `;
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
-                    d += `M${bx.toFixed(1)},${by.toFixed(1)} L${rx.toFixed(1)},${ry.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(lx)},${r(ly)} M${r(bx)},${r(by)} L${r(rx)},${r(ry)} `);
                     break;
                 case 11:
                     bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
-                    d += `M${bx.toFixed(1)},${by.toFixed(1)} L${rx.toFixed(1)},${ry.toFixed(1)} `;
+                    parts.push(`M${r(bx)},${r(by)} L${r(rx)},${r(ry)} `);
                     break;
                 case 12:
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
-                    d += `M${rx.toFixed(1)},${ry.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)} `;
+                    parts.push(`M${r(rx)},${r(ry)} L${r(lx)},${r(ly)} `);
                     break;
                 case 13:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${rx.toFixed(1)},${ry.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(rx)},${r(ry)} `);
                     break;
                 case 14:
                     tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
                     lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
-                    d += `M${tx.toFixed(1)},${ty.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)} `;
+                    parts.push(`M${r(tx)},${r(ty)} L${r(lx)},${r(ly)} `);
                     break;
             }
         }
     }
-    return d;
+    return parts.join("");
 }
 
 /** Builds one path string per contour level, evenly spaced across [-levelRange, levelRange]. */
@@ -185,4 +194,22 @@ export function buildAllContourPaths(
         paths.push(buildContourPath(grid, cols, rows, gridStep, level));
     }
     return paths;
+}
+
+/**
+ * Merges per-level path strings into just two combined strings (major,
+ * minor) instead of one <Path> element per level. SVG's `d` attribute
+ * happily accepts multiple "M...L..." subpaths concatenated together, so
+ * this is visually identical but renders 2 elements instead of N - each
+ * <Path> carries real React reconciliation + native-bridge cost, and that
+ * was adding up with levels in the teens.
+ */
+export function mergeByMajor(paths: string[], majorEvery: number): { major: string; minor: string } {
+    let major = "";
+    let minor = "";
+    for (let i = 0; i < paths.length; i++) {
+        if (i % majorEvery === 0) major += paths[i];
+        else minor += paths[i];
+    }
+    return { major, minor };
 }

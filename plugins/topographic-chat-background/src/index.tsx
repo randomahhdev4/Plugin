@@ -8,8 +8,9 @@ import { logger } from "@vendetta";
 import Settings from "./Settings";
 import { ensureDefaults, DEFAULT_SETTINGS } from "./settings-model";
 import { subscribe, getPaths } from "./engine";
+import { mergeByMajor } from "./contours";
 
-const { Animated, Dimensions, StyleSheet } = ReactNative;
+const { View, Dimensions, StyleSheet } = ReactNative;
 
 // Resolved lazily (not at module-eval time): if react-native-svg hasn't been
 // touched by Discord's own code yet at the moment this plugin is enabled,
@@ -52,21 +53,12 @@ export function TopographicBackground() {
     const layer = React.useMemo(() => {
         if (!svg) return null;
         const { Svg, Path } = svg;
-        const items: any[] = [];
-        paths.forEach((d, i) => {
-            const isMajor = i % majorEvery === 0;
-            if (isMajor) {
-                if (glow) {
-                    items.push(<Path key={`${i}-glow`} d={d} stroke={colorMain} strokeWidth={4} strokeOpacity={0.25} fill="none" />);
-                }
-                items.push(<Path key={i} d={d} stroke={colorMain} strokeWidth={1.6} fill="none" />);
-            } else {
-                items.push(<Path key={i} d={d} stroke={colorSub} strokeWidth={1} strokeOpacity={0.32} fill="none" />);
-            }
-        });
+        const { major, minor } = mergeByMajor(paths, majorEvery);
         return (
             <Svg width={width} height={height}>
-                {items}
+                {minor ? <Path d={minor} stroke={colorSub} strokeWidth={1} strokeOpacity={0.32} fill="none" /> : null}
+                {major && glow ? <Path d={major} stroke={colorMain} strokeWidth={4} strokeOpacity={0.25} fill="none" /> : null}
+                {major ? <Path d={major} stroke={colorMain} strokeWidth={1.6} fill="none" /> : null}
             </Svg>
         );
     }, [svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
@@ -74,9 +66,9 @@ export function TopographicBackground() {
     if (!svg || !layer) return null;
 
     return (
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: bgOpacity }]}>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: bgOpacity }]}>
             {layer}
-        </Animated.View>
+        </View>
     );
 }
 

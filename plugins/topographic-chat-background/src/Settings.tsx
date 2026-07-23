@@ -7,6 +7,7 @@ import { showToast } from "@vendetta/ui/toasts";
 
 import { DEFAULT_SETTINGS, ensureDefaults, randomizeNoise } from "./settings-model";
 import { subscribe, getPaths } from "./engine";
+import { mergeByMajor } from "./contours";
 
 const { ScrollView, View, Pressable, Text, Dimensions } = ReactNative;
 const { FormSection, FormRow, FormInput, FormText, FormSwitchRow } = Forms;
@@ -55,21 +56,14 @@ function Preview() {
 
     const { Svg, Path } = svg;
     const paths = getPaths(previewWidth, PREVIEW_HEIGHT);
-    const items: any[] = [];
-    paths.forEach((d, i) => {
-        const isMajor = i % majorEvery === 0;
-        if (isMajor) {
-            if (glow) items.push(<Path key={`${i}-glow`} d={d} stroke={colorMain} strokeWidth={4} strokeOpacity={0.25} fill="none" />);
-            items.push(<Path key={i} d={d} stroke={colorMain} strokeWidth={1.6} fill="none" />);
-        } else {
-            items.push(<Path key={i} d={d} stroke={colorSub} strokeWidth={1} strokeOpacity={0.32} fill="none" />);
-        }
-    });
+    const { major, minor } = mergeByMajor(paths, majorEvery);
 
     return (
         <View style={{ width: "100%", height: PREVIEW_HEIGHT, backgroundColor: colorBg, borderRadius: 8, overflow: "hidden" }}>
             <Svg width={previewWidth} height={PREVIEW_HEIGHT}>
-                {items}
+                {minor ? <Path d={minor} stroke={colorSub} strokeWidth={1} strokeOpacity={0.32} fill="none" /> : null}
+                {major && glow ? <Path d={major} stroke={colorMain} strokeWidth={4} strokeOpacity={0.25} fill="none" /> : null}
+                {major ? <Path d={major} stroke={colorMain} strokeWidth={1.6} fill="none" /> : null}
             </Svg>
         </View>
     );
