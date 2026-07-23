@@ -154,8 +154,8 @@ export default function Settings() {
             </View>
 
             <FormSection title="Geometry">
-                <Stepper label="Grid step (detail)" value={gridStep} min={4} max={20} step={1} format={(v) => String(v)} onChange={(v) => (storage.gridStep = v)} />
-                <Stepper label="Contour levels" value={levels} min={4} max={24} step={1} format={(v) => String(v)} onChange={(v) => (storage.levels = v)} />
+                <Stepper label="Grid step (detail)" value={gridStep} min={10} max={24} step={1} format={(v) => String(v)} onChange={(v) => (storage.gridStep = v)} />
+                <Stepper label="Contour levels" value={levels} min={4} max={12} step={1} format={(v) => String(v)} onChange={(v) => (storage.levels = v)} />
                 <Stepper label="Level range (spread)" value={levelRange} min={0.5} max={6} step={0.1} format={(v) => v.toFixed(1)} onChange={(v) => (storage.levelRange = v)} />
                 <Stepper label="Major line every" value={majorEvery} min={1} max={10} step={1} format={(v) => String(v)} onChange={(v) => (storage.majorEvery = v)} />
             </FormSection>

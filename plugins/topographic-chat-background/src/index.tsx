@@ -1,7 +1,6 @@
 import { findByDisplayName, findByProps } from "@vendetta/metro";
 import { React, ReactNative, chroma } from "@vendetta/metro/common";
 import { after } from "@vendetta/patcher";
-import { findInReactTree } from "@vendetta/utils";
 import { storage } from "@vendetta/plugin";
 import { logger } from "@vendetta";
 
@@ -85,8 +84,49 @@ function getTransparentColor(original: string): string {
     return cached;
 }
 
+const isMessagesBg = (x: any) => x && "HACK_fixModalInteraction" in x.props && x?.props?.style;
+
+function walkPath(tree: any, path: number[]): any {
+    let node = tree;
+    for (const idx of path) {
+        const children = node?.props?.children;
+        if (children == null) return null;
+        node = Array.isArray(children) ? children[idx] : idx === 0 ? children : null;
+        if (!node) return null;
+    }
+    return node;
+}
+
+function findPathTo(tree: any, path: number[] = []): number[] | null {
+    if (isMessagesBg(tree)) return path;
+    const children = tree?.props?.children;
+    if (children == null) return null;
+    const arr = Array.isArray(children) ? children : [children];
+    for (let i = 0; i < arr.length; i++) {
+        const found = findPathTo(arr[i], [...path, i]);
+        if (found) return found;
+    }
+    return null;
+}
+
+// Discord's own tree shape is stable across ordinary re-renders (new
+// messages, typing state, etc. change content, not structure), so the
+// child-index path to this element is almost always the same every time.
+// A direct walk down a known path is O(depth); a full findInReactTree scan
+// is O(size of the whole rendered subtree) - on every single
+// MessagesConnected render, independent of anything the contour background
+// itself does. Falls back to a full search if the cached path ever misses
+// (tree shape genuinely changed), and re-caches from that.
+let cachedPath: number[] | null = null;
+
 function revealBehindMessages(tree: any): boolean {
-    const messagesBg = findInReactTree(tree, (x: any) => x && "HACK_fixModalInteraction" in x.props && x?.props?.style);
+    let messagesBg = cachedPath ? walkPath(tree, cachedPath) : null;
+    if (!messagesBg || !isMessagesBg(messagesBg)) {
+        const path = findPathTo(tree);
+        if (!path) return false;
+        cachedPath = path;
+        messagesBg = walkPath(tree, path);
+    }
     if (!messagesBg) return false;
 
     const flattened = StyleSheet.flatten(messagesBg.props.style);
