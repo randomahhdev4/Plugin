@@ -31,7 +31,7 @@ function getSvg() {
 // read as a real preview rather than a sliver. Uses the same shared engine
 // as the live background (keyed by this exact size), so there's one
 // generation codepath, not a second copy of the timer/lifecycle logic.
-const PREVIEW_HEIGHT = 200;
+const PREVIEW_HEIGHT = 450;
 
 function Preview() {
     const svg = getSvg();
