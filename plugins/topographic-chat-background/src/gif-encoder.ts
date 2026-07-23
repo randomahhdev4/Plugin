@@ -81,7 +81,16 @@ export function quantize(frames: Uint8Array[], maxColors = 256): { palette: RGB[
 }
 
 class ByteWriter {
-    bytes: number[] = [];
+    bytes: number[];
+    constructor() {
+        // Explicit constructor assignment rather than a class-field
+        // initializer (`bytes: number[] = []`) - the field-initializer form
+        // depends on the build's class transform lowering it correctly,
+        // which this bundle's older-target swc/Hermes pipeline apparently
+        // doesn't do reliably. A plain constructor assignment is
+        // unambiguous ES2015 and can't be misinterpreted.
+        this.bytes = [];
+    }
     u8(v: number) {
         this.bytes.push(v & 0xff);
     }
