@@ -177,6 +177,120 @@ export function buildContourPath(grid: Float32Array, cols: number, rows: number,
     return parts.join("");
 }
 
+/**
+ * Same marching-squares walk as buildContourPath, but collecting raw
+ * [x1,y1,x2,y2, x1,y1,x2,y2, ...] segment coordinates instead of an SVG
+ * path string - used by the software rasterizer (baking to a GIF), which
+ * needs actual line endpoints to draw, not path-string syntax.
+ */
+export function buildContourSegments(grid: Float32Array, cols: number, rows: number, gridStep: number, level: number): number[] {
+    const segs: number[] = [];
+    const gs = gridStep;
+
+    for (let j = 0; j < rows - 1; j++) {
+        const rowOff = j * cols;
+        const rowOff2 = rowOff + cols;
+        const y0 = j * gs;
+        const y1 = y0 + gs;
+
+        for (let i = 0; i < cols - 1; i++) {
+            const v00 = grid[rowOff + i];
+            const v10 = grid[rowOff + i + 1];
+            const v11 = grid[rowOff2 + i + 1];
+            const v01 = grid[rowOff2 + i];
+
+            let idx = 0;
+            if (v00 > level) idx |= 1;
+            if (v10 > level) idx |= 2;
+            if (v11 > level) idx |= 4;
+            if (v01 > level) idx |= 8;
+            if (idx === 0 || idx === 15) continue;
+
+            const x0 = i * gs;
+            const x1 = x0 + gs;
+            let tx = 0, ty = 0, rx = 0, ry = 0, bx = 0, by = 0, lx = 0, ly = 0;
+
+            switch (idx) {
+                case 1:
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    segs.push(lx, ly, tx, ty);
+                    break;
+                case 2:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    segs.push(tx, ty, rx, ry);
+                    break;
+                case 3:
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    segs.push(lx, ly, rx, ry);
+                    break;
+                case 4:
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    segs.push(rx, ry, bx, by);
+                    break;
+                case 5:
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    segs.push(lx, ly, tx, ty, rx, ry, bx, by);
+                    break;
+                case 6:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    segs.push(tx, ty, bx, by);
+                    break;
+                case 7:
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    segs.push(lx, ly, bx, by);
+                    break;
+                case 8:
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    segs.push(bx, by, lx, ly);
+                    break;
+                case 9:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    segs.push(tx, ty, bx, by);
+                    break;
+                case 10:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    segs.push(tx, ty, lx, ly, bx, by, rx, ry);
+                    break;
+                case 11:
+                    bx = x0 + (x1 - x0) * (level - v01) / (v11 - v01); by = y1;
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    segs.push(bx, by, rx, ry);
+                    break;
+                case 12:
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    segs.push(rx, ry, lx, ly);
+                    break;
+                case 13:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    rx = x1; ry = y0 + (y1 - y0) * (level - v10) / (v11 - v10);
+                    segs.push(tx, ty, rx, ry);
+                    break;
+                case 14:
+                    tx = x0 + (x1 - x0) * (level - v00) / (v10 - v00); ty = y0;
+                    lx = x0; ly = y0 + (y1 - y0) * (level - v00) / (v01 - v00);
+                    segs.push(tx, ty, lx, ly);
+                    break;
+            }
+        }
+    }
+    return segs;
+}
+
 /** Builds one path string per contour level, evenly spaced across [-levelRange, levelRange]. */
 export function buildAllContourPaths(
     width: number,

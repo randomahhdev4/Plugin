@@ -8,6 +8,7 @@ import { showToast } from "@vendetta/ui/toasts";
 import { DEFAULT_SETTINGS, ensureDefaults, randomizeNoise } from "./settings-model";
 import { subscribe, getPaths } from "./engine";
 import { mergeByMajor } from "./contours";
+import { bakeGif } from "./bake";
 
 const { ScrollView, View, Pressable, Text, Dimensions } = ReactNative;
 const { FormSection, FormRow, FormInput, FormText, FormSwitchRow } = Forms;
@@ -130,6 +131,61 @@ function Stepper({
     );
 }
 
+function BakeSection() {
+    useProxy(storage);
+    const [baking, setBaking] = React.useState(false);
+    const [progress, setProgress] = React.useState("");
+    const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+
+    const cachedGifPath = storage.cachedGifPath as string | undefined;
+    const useCachedGif = !!storage.useCachedGif;
+
+    return (
+        <FormSection title="Baked Background (experimental)">
+            <FormText style={{ padding: 16 }}>
+                Renders the current settings to an actual GIF file and plays that back instead of
+                generating the pattern live. Once baked, display costs nothing on the JS thread - the
+                platform decodes and loops the GIF natively, the same as any other image. Re-run Apply
+                any time you change a setting above; it only affects display, not the live preview.
+            </FormText>
+            <FormText style={{ paddingHorizontal: 16, paddingBottom: 16, color: "#F0B232" }}>
+                ⚠️ Your device will likely stutter for several seconds while this bakes (it's real
+                rendering work, just done once instead of continuously). Stay on this screen until it
+                finishes.
+            </FormText>
+
+            <FormRow
+                label={baking ? progress || "Baking..." : "Apply (bake to GIF)"}
+                subLabel={!baking ? `Renders at ${Math.round(screenWidth)}x${Math.round(screenHeight)}` : undefined}
+                onPress={async () => {
+                    if (baking) return;
+                    setBaking(true);
+                    try {
+                        const path = await bakeGif(screenWidth, screenHeight, (msg) => setProgress(msg));
+                        storage.cachedGifPath = path;
+                        storage.useCachedGif = true;
+                        showToast("Baked successfully");
+                    } catch (e) {
+                        showToast("Bake failed: " + (e && (e as Error).message ? (e as Error).message : String(e)));
+                    } finally {
+                        setBaking(false);
+                        setProgress("");
+                    }
+                }}
+            />
+
+            {cachedGifPath ? (
+                <FormSwitchRow
+                    label="Use baked GIF"
+                    subLabel={useCachedGif ? "Showing the baked GIF" : "Baked GIF exists but live rendering is active"}
+                    value={useCachedGif}
+                    onValueChange={(v: boolean) => (storage.useCachedGif = v)}
+                />
+            ) : null}
+        </FormSection>
+    );
+}
+
 export default function Settings() {
     useProxy(storage);
     ensureDefaults();
@@ -152,6 +208,8 @@ export default function Settings() {
             <View style={{ padding: 16 }}>
                 <Preview />
             </View>
+
+            <BakeSection />
 
             <FormSection title="Geometry">
                 <Stepper label="Grid step (detail)" value={gridStep} min={10} max={24} step={1} format={(v) => String(v)} onChange={(v) => (storage.gridStep = v)} />

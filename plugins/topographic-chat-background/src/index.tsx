@@ -9,7 +9,7 @@ import { ensureDefaults, DEFAULT_SETTINGS } from "./settings-model";
 import { subscribe, getPaths } from "./engine";
 import { mergeByMajor } from "./contours";
 
-const { View, Dimensions, StyleSheet } = ReactNative;
+const { View, Image, Dimensions, StyleSheet } = ReactNative;
 
 // Resolved lazily (not at module-eval time): if react-native-svg hasn't been
 // touched by Discord's own code yet at the moment this plugin is enabled,
@@ -36,21 +36,26 @@ export function TopographicBackground() {
     const colorSub = storage.colorSub ?? DEFAULT_SETTINGS.colorSub;
     const glow = storage.glow ?? DEFAULT_SETTINGS.glow;
     const bgOpacity = storage.bgOpacity ?? DEFAULT_SETTINGS.bgOpacity;
+    const useCachedGif = !!storage.useCachedGif;
+    const cachedGifPath = storage.cachedGifPath as string | undefined;
+    const showingGif = useCachedGif && !!cachedGifPath;
 
     const { width, height } = Dimensions.get("window");
     const [, forceTick] = React.useState(0);
 
-    // Generation itself lives in the shared engine, keyed by size, so it
-    // keeps running on its own schedule regardless of how often this
-    // particular component instance mounts/unmounts. This effect just
-    // subscribes to updates for this size and re-renders when they happen.
-    React.useEffect(() => subscribe(width, height, () => forceTick((t) => t + 1)), [width, height]);
+    // Hooks always run (hooks rule), but the subscription itself is a no-op
+    // while a baked GIF is in use - no reason to keep the live generation
+    // engine running for a size nothing is displaying.
+    React.useEffect(() => {
+        if (showingGif) return;
+        return subscribe(width, height, () => forceTick((t) => t + 1));
+    }, [width, height, showingGif]);
 
     const svg = getSvg();
     const paths = getPaths(width, height);
 
     const layer = React.useMemo(() => {
-        if (!svg) return null;
+        if (showingGif || !svg) return null;
         const { Svg, Path } = svg;
         const { major, minor } = mergeByMajor(paths, majorEvery);
         return (
@@ -60,7 +65,18 @@ export function TopographicBackground() {
                 {major ? <Path d={major} stroke={colorMain} strokeWidth={1.6} fill="none" /> : null}
             </Svg>
         );
-    }, [svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
+    }, [showingGif, svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
+
+    if (showingGif) {
+        return (
+            <Image
+                pointerEvents="none"
+                source={{ uri: `file://${cachedGifPath}` }}
+                style={[StyleSheet.absoluteFillObject, { opacity: bgOpacity }]}
+                resizeMode="cover"
+            />
+        );
+    }
 
     if (!svg || !layer) return null;
 
