@@ -38,24 +38,30 @@ export function TopographicBackground() {
     const bgOpacity = storage.bgOpacity ?? DEFAULT_SETTINGS.bgOpacity;
     const useCachedGif = !!storage.useCachedGif;
     const cachedGifPath = storage.cachedGifPath as string | undefined;
-    const showingGif = useCachedGif && !!cachedGifPath;
+    const hasBaked = !!cachedGifPath;
+    // The actual chat background never falls back to live rendering - only
+    // the settings screen's own preview does that, for tuning. Until a bake
+    // has actually succeeded once, this renders nothing at all in chat.
+    const showingGif = hasBaked && useCachedGif;
+    const showingLive = hasBaked && !useCachedGif;
 
     const { width, height } = Dimensions.get("window");
     const [, forceTick] = React.useState(0);
 
-    // Hooks always run (hooks rule), but the subscription itself is a no-op
-    // while a baked GIF is in use - no reason to keep the live generation
-    // engine running for a size nothing is displaying.
+    // Hooks always run (hooks rule), but the subscription itself only does
+    // real work once a bake exists and live mode is actually selected -
+    // before the first successful bake, nothing subscribes, nothing
+    // generates, nothing renders in chat at all.
     React.useEffect(() => {
-        if (showingGif) return;
+        if (!showingLive) return;
         return subscribe(width, height, () => forceTick((t) => t + 1));
-    }, [width, height, showingGif]);
+    }, [width, height, showingLive]);
 
     const svg = getSvg();
     const paths = getPaths(width, height);
 
     const layer = React.useMemo(() => {
-        if (showingGif || !svg) return null;
+        if (!showingLive || !svg) return null;
         const { Svg, Path } = svg;
         const { major, minor } = mergeByMajor(paths, majorEvery);
         return (
@@ -65,7 +71,7 @@ export function TopographicBackground() {
                 {major ? <Path d={major} stroke={colorMain} strokeWidth={1.6} fill="none" /> : null}
             </Svg>
         );
-    }, [showingGif, svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
+    }, [showingLive, svg, paths, colorMain, colorSub, majorEvery, glow, width, height]);
 
     if (showingGif) {
         return (
@@ -78,7 +84,7 @@ export function TopographicBackground() {
         );
     }
 
-    if (!svg || !layer) return null;
+    if (!showingLive || !svg || !layer) return null;
 
     return (
         <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: bgOpacity }]}>

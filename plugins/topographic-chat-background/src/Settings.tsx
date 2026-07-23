@@ -142,8 +142,8 @@ function BakeSection() {
 
     return (
         <FormSection title="Baked Background (experimental)">
-            <FormText style={{ paddingHorizontal: 16, paddingBottom: 16, color: "#F0B232" }}>t
-                ⚠️ Your device will likely stutter for several seconds while this bakes
+            <FormText style={{ paddingHorizontal: 16, paddingBottom: 16, color: "#F0B232" }}>
+                ⚠️ Your device will likely stutter for several seconds while this bakes. Also keep in mind: changes you make without pressing Apply will only show in this preview, not in chat, once you've baked before.
             </FormText>
 
             <FormRow
